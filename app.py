@@ -5,7 +5,7 @@ sys.stdout.flush()
 app.py - Web 应用入口（V6 增强部署版）
 将 market_advisor 分析系统封装为 Web 服务
 集成智能推荐、实盘跟踪、自适应升级、信号监控、出场策略、微信通知
-并加入完整的线上部署功能（ngrok 隧道、数据状态检查、定时任务调度等）
+并加入完整的线上部署功能（定时任务调度等）
 
 新增：每日 15:00 自动执行数据获取+智能推荐，推送微信通知
 新增：模拟交易回测功能
@@ -1087,6 +1087,8 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self._json_response(handle_modules_status())
             elif path == "/api/exit-signals":
                 self._json_response(handle_exit_signals(params))
+            elif path == "/health":
+                self._json_response({"status": "ok"}, 200)
             elif path == "/" or path == "/index.html":
                 self._serve_file(os.path.join(TEMPLATE_DIR, "index.html"), "text/html")
             elif path.startswith("/static/"):
@@ -1182,79 +1184,6 @@ def create_templates():
     css_path = os.path.join(STATIC_DIR, "style.css")
     if not os.path.exists(css_path):
         pass
-
-
-# ============ 部署增强功能（ngrok 隧道、数据状态检查、定时任务） ============
-
-def setup_ngrok():
-    try:
-        from pyngrok import ngrok, conf, exception
-        
-        ngrok_token = os.environ.get("NGROK_TOKEN", "35N468LQPlnSyOUoIJJFTY9DkN2_43HXgfv13d7kZDbEGEg1Q")
-        
-        if ngrok_token:
-            try:
-                ngrok.set_auth_token(ngrok_token)
-                logger.info("[OK] ngrok认证令牌设置成功")
-            except Exception as e:
-                logger.warning(f"[WARN] 设置ngrok认证令牌失败: {e}")
-        
-        try:
-            tunnels = ngrok.get_tunnels()
-            if tunnels:
-                logger.info(f"[NET] 发现 {len(tunnels)} 个现有ngrok隧道")
-                public_url = tunnels[0].public_url
-                logger.info(f"[NET] 使用现有ngrok隧道: {public_url}")
-                return public_url
-        except Exception as e:
-            logger.warning(f"[WARN] 检查现有隧道失败: {e}")
-        
-        logger.info("[NET] 正在创建新的ngrok隧道...")
-        
-        try:
-            try:
-                ngrok.kill()
-            except:
-                pass
-            
-            time.sleep(1)
-            
-            public_url = ngrok.connect(5000, bind_tls=True)
-            public_url = public_url.public_url if hasattr(public_url, 'public_url') else str(public_url)
-            
-            logger.info(f"[OK] ngrok隧道创建成功: {public_url}")
-            return public_url
-            
-        except exception.PyngrokNgrokError as e:
-            if "already online" in str(e):
-                logger.warning("[WARN] ngrok隧道已存在，尝试获取现有地址")
-                try:
-                    tunnels = ngrok.get_tunnels()
-                    if tunnels:
-                        public_url = tunnels[0].public_url
-                        logger.info(f"[NET] 使用现有隧道地址: {public_url}")
-                        return public_url
-                except:
-                    pass
-            
-            try:
-                logger.info("[NET] 尝试使用随机子域名创建隧道...")
-                import random
-                random_subdomain = f"stock-{random.randint(1000, 9999)}"
-                public_url = ngrok.connect(5000, subdomain=random_subdomain, bind_tls=True)
-                public_url = public_url.public_url if hasattr(public_url, 'public_url') else str(public_url)
-                logger.info(f"[OK] 使用随机子域名创建隧道成功: {public_url}")
-                return public_url
-            except Exception as e2:
-                logger.error(f"[ERROR] 创建随机子域名隧道失败: {e2}")
-                raise e
-                
-    except ImportError:
-        logger.warning("[WARN] pyngrok未安装，如需公网访问请运行: pip install pyngrok")
-        return None
-    except Exception as e:
-        logger.error(f"[ERROR] ngrok启动失败: {e}")
-        return None
 
 
 # ============ 定时任务函数 ============
@@ -1354,7 +1283,7 @@ def main():
     except Exception as e:
         print(f"[WARN] 检查数据状态失败: {e}")
     
-    
+    # ngrok 已移除，仅打印内网地址供调试
     import socket
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
