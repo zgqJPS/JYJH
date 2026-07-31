@@ -1,6 +1,6 @@
 """
 app.py - Web 应用入口（V6 增强部署版）
-封装 market_advisor 分析系统为 Web 服务
+将 market_advisor 分析系统封装为 Web 服务
 集成智能推荐、实盘跟踪、自适应升级、信号监控、出场策略、微信通知
 并加入完整的线上部署功能（ngrok 隧道、数据状态检查、定时任务调度等）
 
@@ -8,39 +8,39 @@ app.py - Web 应用入口（V6 增强部署版）
 新增：模拟交易回测功能
 """
 
-import sys
-import os
-import json
-import uuid
-import threading
-import logging
-import mimetypes
-import requests
-import time
-import schedule
-from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
-from datetime import datetime, timedelta
+导入 sys
+导入 os
+导入 json
+导入 uuid
+导入 threading
+导入 logging
+导入 mimetypes
+导入 requests
+导入 time
+导入 schedule
+从 http.server 导入 HTTPServer, SimpleHTTPRequestHandler
+从 urllib.parse 导入 urlparse, parse_qs
+从 datetime 导入 datetime, timedelta
 
-# 确保项目路径在 sys.path
+# 确保项目路径在 sys.path 中
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_DIR)
 
-from config import DB_PATH, KNOWLEDGE_DIR
-from db import Database
-from main import run_fetch
+从配置文件 导入 DB_PATH、KNOWLEDGE_DIR
+从数据库 导入 Database
+从主程序 导入 run_fetch
 
 # ============ Server酱微信通知 ============
-class ServerChanNotifier:
+类 ServerChanNotifier:
     def __init__(self, sckey: str):
         self.sckey = sckey
         self.base_url = f"https://sctapi.ftqq.com/{sckey}.send"
 
     def send_notification(self, title: str, content: str) -> bool:
         if not self.sckey:
-            return False
+            返回 False
         try:
-            payload = {'title': title[:32], 'desp': content, 'channel': 9}
+{'标题': 标题[:32], '描述': 内容, '频道'
             response = requests.post(self.base_url, data=payload, timeout=30)
             if response.status_code == 200:
                 result = response.json()
@@ -1425,4 +1425,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
