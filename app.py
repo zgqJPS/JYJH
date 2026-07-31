@@ -1354,9 +1354,6 @@ def main():
     except Exception as e:
         print(f"[WARN] 检查数据状态失败: {e}")
     
-    public_url = setup_ngrok()
-    if public_url:
-        print(f"[NET] 公网访问地址: {public_url}")
     
     import socket
     hostname = socket.gethostname()
