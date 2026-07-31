@@ -1,14 +1,6 @@
-import sys
-print("=== 应用启动 ===", flush=True)
-sys.stdout.flush()
 """
 app.py - Web 应用入口（V6 增强部署版）
-将 market_advisor 分析系统封装为 Web 服务
-集成智能推荐、实盘跟踪、自适应升级、信号监控、出场策略、微信通知
-并加入完整的线上部署功能（定时任务调度等）
-
-新增：每日 15:00 自动执行数据获取+智能推荐，推送微信通知
-新增：模拟交易回测功能
+移除 ngrok，添加健康检查，适配 Railway 部署
 """
 
 import sys
@@ -53,8 +45,7 @@ class ServerChanNotifier:
             logging.error(f"发送微信通知失败: {e}")
             return False
 
-# 从环境变量读取 SCKEY，未配置则禁用
-SERVER_CHAN_SCKEY = os.environ.get("SERVER_CHAN_SCKEY", "SCT302469TzkdqbtA9rEWoHctOuDgRg9K3")
+SERVER_CHAN_SCKEY = os.environ.get("SERVER_CHAN_SCKEY", "")
 if not SERVER_CHAN_SCKEY:
     logging.warning("未设置 SERVER_CHAN_SCKEY，微信通知禁用")
     notifier = None
@@ -99,9 +90,6 @@ try:
 except Exception as e:
     _new_modules_status['simulator'] = f'error: {e}'
 
-# ============ 数据库连接增强 ============
-# 在 Database 类中已设置 check_same_thread=False，确保所有查询通过该实例
-
 # ============ 任务状态 ============
 tasks = {}
 tasks_lock = threading.Lock()
@@ -113,7 +101,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("web")
 
 
-# ============ 通知辅助 ============
 def send_recommend_notification(date_str, recommendations, market_state, next_day):
     if not notifier:
         return False
@@ -143,9 +130,7 @@ def send_recommend_notification(date_str, recommendations, market_state, next_da
     return notifier.send_notification(title, content)
 
 
-# ============ 交易日检查器（已有） ============
 class TradingDayChecker:
-    """交易日检查器（简化版）"""
     @staticmethod
     def is_trading_day(date_str: str = None) -> tuple:
         if not date_str:
@@ -156,7 +141,6 @@ class TradingDayChecker:
         return True, f"{date_str} 是交易日"
 
 
-# ============ 日期工具 ============
 def get_next_trading_day(date_str: str) -> str:
     try:
         db = Database(DB_PATH)
@@ -202,7 +186,6 @@ def _determine_analysis_date(preferred_date=None):
     return data_date, target_date
 
 
-# ============ 任务执行 ============
 def run_task(task_id, task_type, params=None):
     with tasks_lock:
         tasks[task_id] = {
@@ -1058,7 +1041,9 @@ class RequestHandler(SimpleHTTPRequestHandler):
             path = parsed.path
             params = parse_qs(parsed.query)
 
-            if path == "/api/dashboard":
+            if path == "/health":
+                self._json_response({"status": "ok"}, 200)
+            elif path == "/api/dashboard":
                 self._json_response(handle_dashboard())
             elif path == "/api/daily/status":
                 self._json_response(handle_task_status(params))
@@ -1087,8 +1072,6 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self._json_response(handle_modules_status())
             elif path == "/api/exit-signals":
                 self._json_response(handle_exit_signals(params))
-            elif path == "/health":
-                self._json_response({"status": "ok"}, 200)
             elif path == "/" or path == "/index.html":
                 self._serve_file(os.path.join(TEMPLATE_DIR, "index.html"), "text/html")
             elif path.startswith("/static/"):
@@ -1258,17 +1241,17 @@ def main():
     print("=" * 70)
     print("[*] 市场分析系统 V6 (增强部署版)")
     print("=" * 70)
-    
+
     create_templates()
     print("[OK] 模板文件已准备")
-    
+
     try:
         schedule.every().day.at("15:00").do(scheduled_fetch_and_recommend)
         threading.Thread(target=run_scheduler, daemon=True).start()
         print("[SCHEDULE] 每日15:00自动获取数据并推荐已启用")
     except Exception as e:
         print(f"[WARN] 定时任务设置失败: {e}")
-    
+
     try:
         db = Database(DB_PATH)
         all_dates = db.get_all_dates()
@@ -1282,20 +1265,13 @@ def main():
         db.close()
     except Exception as e:
         print(f"[WARN] 检查数据状态失败: {e}")
-    
-    # ngrok 已移除，仅打印内网地址供调试
-    import socket
-    hostname = socket.gethostname()
-    local_ip = socket.gethostbyname(hostname)
-    print(f"[NET] 局域网访问地址: http://{local_ip}:5000")
-    print(f"[NET] 本地访问地址: http://localhost:5000")
-    
-    print("[OK] 服务器启动成功！")
-    print("[INFO] 按 Ctrl+C 停止服务器")
-    
+
     host = "0.0.0.0"
     port = int(os.environ.get("PORT", 5000))
+    print(f"[NET] 监听地址: {host}:{port}")
     server = ReuseHTTPServer((host, port), RequestHandler)
+    print("[OK] 服务器启动成功！")
+    print("[INFO] 按 Ctrl+C 停止服务器")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
