@@ -1,3 +1,6 @@
+import sys
+print("=== 应用启动 ===", flush=True)
+sys.stdout.flush()
 """
 app.py - Web 应用入口（V6 增强部署版）
 将 market_advisor 分析系统封装为 Web 服务
