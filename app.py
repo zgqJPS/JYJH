@@ -45,7 +45,8 @@ class ServerChanNotifier:
             logging.error(f"发送微信通知失败: {e}")
             return False
 
-SERVER_CHAN_SCKEY = os.environ.get("SERVER_CHAN_SCKEY", "")
+# 从环境变量读取 SCKEY，未配置则禁用
+SERVER_CHAN_SCKEY = os.environ.get("SERVER_CHAN_SCKEY", "SCT302469TzkdqbtA9rEWoHctOuDgRg9K3")
 if not SERVER_CHAN_SCKEY:
     logging.warning("未设置 SERVER_CHAN_SCKEY，微信通知禁用")
     notifier = None
