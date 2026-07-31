@@ -1,0 +1,978 @@
+{
+  "updated_at": "2026-07-30T09:43:59.110643",
+  "total_patterns": 137,
+  "builtin_signals_count": 5,
+  "by_type": {
+    "concept_rotation": [
+      {
+        "description": "概念发散",
+        "occurrence_count": 88,
+        "success_rate": 0.162,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "主线明确",
+        "occurrence_count": 33,
+        "success_rate": 0.162,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "概念固化",
+        "occurrence_count": 1,
+        "success_rate": 0.162,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      }
+    ],
+    "cycle_phase": [
+      {
+        "description": "发酵期",
+        "occurrence_count": 68,
+        "success_rate": 0.165,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "退潮期",
+        "occurrence_count": 42,
+        "success_rate": 0.165,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "启动期",
+        "occurrence_count": 8,
+        "success_rate": 0.165,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "高潮期",
+        "occurrence_count": 4,
+        "success_rate": 0.165,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      }
+    ],
+    "low_credibility": [
+      {
+        "description": "seal_quality_factor连续误判42次",
+        "occurrence_count": 21,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "cycle_factor连续误判3次",
+        "occurrence_count": 12,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "breadth_factor连续误判3次",
+        "occurrence_count": 7,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "breadth_factor连续误判4次",
+        "occurrence_count": 7,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "continuation_factor连续误判4次",
+        "occurrence_count": 6,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "concept_heat_factor连续误判4次",
+        "occurrence_count": 6,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "breadth_factor连续误判5次",
+        "occurrence_count": 6,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "concept_heat_factor连续误判5次",
+        "occurrence_count": 6,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "concept_heat_factor连续误判6次",
+        "occurrence_count": 6,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "cycle_factor连续误判7次",
+        "occurrence_count": 6,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判17次",
+        "occurrence_count": 5,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判36次",
+        "occurrence_count": 5,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "continuation_factor连续误判3次",
+        "occurrence_count": 4,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "concept_heat_factor连续误判3次",
+        "occurrence_count": 4,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "momentum_factor连续误判3次",
+        "occurrence_count": 4,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判12次",
+        "occurrence_count": 3,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判20次",
+        "occurrence_count": 3,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判31次",
+        "occurrence_count": 3,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判3次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判5次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "continuation_factor连续误判5次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "continuation_factor连续误判6次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判6次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判10次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判11次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "cycle_factor连续误判4次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "cycle_factor连续误判5次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "cycle_factor连续误判6次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判22次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判24次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判25次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判29次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判30次",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判3次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判4次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判5次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判6次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判7次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判4次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判8次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判9次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判10次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判11次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判12次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判7次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判13次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判8次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判14次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判9次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判15次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判16次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判17次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判18次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判19次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判20次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判21次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判22次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判13次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判23次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判14次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判24次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判15次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判25次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判16次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判26次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判27次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判28次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判29次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判30次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判31次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判18次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判32次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判19次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判33次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判34次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判35次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判36次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判21次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判37次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判38次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判39次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判23次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判40次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "seal_quality_factor连续误判41次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判26次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判27次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判28次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判32次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判33次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判34次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "smash_factor连续误判35次",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      }
+    ],
+    "dragon": [
+      {
+        "description": "京投发展(3板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "杭州解百(3板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "协鑫集成(4板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "百川股份(3板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "百川股份(4板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "大位科技(4板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "掌阅科技(5板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "豫能控股(4板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "豫能控股(5板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "豫能控股(6板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "豫能控股(7板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "泰嘉股份(3板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "华盛昌(3板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "水发燃气(4板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "顺钠股份(2板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "顺钠股份(3板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "王力安防(4板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "王力安防(5板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "宁波建工(4板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "中南文化(4板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "中南文化(5板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "三房巷(3板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "三房巷(4板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "三房巷(5板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "深华发Ａ(4板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "深华发Ａ(5板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "华电辽能(6板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "华电辽能(7板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "华电辽能(8板)",
+        "occurrence_count": 4,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "杭电股份(4板)",
+        "occurrence_count": 2,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "新能泰山(3板)",
+        "occurrence_count": 2,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "爱丽家居(7板)",
+        "occurrence_count": 1,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      },
+      {
+        "description": "爱丽家居(8板)",
+        "occurrence_count": 1,
+        "success_rate": 0.147,
+        "last_seen": "2026-07-30",
+        "last_verified": "2026-03-26"
+      }
+    ],
+    "smash_adaptation": [
+      {
+        "description": "砸盘系数自适应调整: 权重=0.250, 低阈值=3.0, 高阈值=7.5",
+        "occurrence_count": 2,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      }
+    ],
+    "prediction_signal": [
+      {
+        "description": "信号1: 5→6突破+砸盘下降 - 连板从5板突破至6板且砸盘系数下降，次日涨停数预期77.8",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "信号2: 砸盘骤降>3+连板≤3 - 砸盘系数单日骤降超过3点且连板高度不超过3，见底反弹信号",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "信号3: 连续2天砸盘<3+连板≤3 - 连续2个交易日砸盘系数低于3且连板不超过3，底部确认信号",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "信号4: 7板+砸盘>6 - 连板高度达到7板且砸盘系数超过6，见顶崩塌信号",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "信号5: 4板+涨停<35+砸盘<3 - 连板仅到4板且涨停数不足35只且砸盘系数低于3，假突破预警",
+        "occurrence_count": 1,
+        "success_rate": 0.5,
+        "last_seen": "2026-07-30",
+        "last_verified": null
+      }
+    ]
+  }
+}

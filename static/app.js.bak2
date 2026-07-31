@@ -1,0 +1,772 @@
+// Market Advisor - 前端交互逻辑
+
+// ============ Tab 切换 ============
+document.querySelectorAll('.nav-link[data-tab]').forEach(link => {
+    link.addEventListener('click', e => {
+        e.preventDefault();
+        const tab = link.dataset.tab;
+        switchTab(tab);
+    });
+});
+
+function switchTab(tab) {
+    // 更新导航
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    document.querySelector(`.nav-link[data-tab="${tab}"]`)?.classList.add('active');
+    // 更新内容
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.getElementById(`tab-${tab}`)?.classList.add('active');
+    // 触发数据加载
+    if (tab === 'dashboard') loadDashboard();
+    if (tab === 'reports') loadReports();
+    if (tab === 'health') loadModelHealth();
+}
+
+// ============ 工具函数 ============
+function getSmashColor(val) {
+    if (val == null) return '';
+    if (val < 3) return 'smash-low';
+    if (val <= 5) return 'smash-mid';
+    return 'smash-high';
+}
+
+function formatNumber(val, digits = 2) {
+    if (val == null || val === '' || isNaN(val)) return '--';
+    return Number(val).toFixed(digits);
+}
+
+async function fetchJSON(url) {
+    const res = await fetch(url);
+    return res.json();
+}
+
+async function postJSON(url, data) {
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+    return res.json();
+}
+
+// ============ 仪表盘 ============
+let smashChartInstance = null;
+
+async function loadDashboard() {
+    try {
+        const resp = await fetchJSON('/api/dashboard');
+        if (!resp.success) return;
+        const data = resp.data;
+        const summary = data.summary || {};
+        
+        // 日期
+        document.getElementById('dashboard-date').textContent = 
+            summary.date ? `数据日期: ${summary.date}` : '暂无数据';
+        
+        // 概览卡片
+        document.getElementById('card-limit-up').textContent = summary.limit_up_count ?? '--';
+        document.getElementById('card-max-board').textContent = summary.max_continuous_boards ?? '--';
+        
+        const smashEl = document.getElementById('card-smash');
+        const smashVal = summary.smash_coefficient;
+        smashEl.textContent = formatNumber(smashVal);
+        smashEl.className = 'card-value smash-value ' + getSmashColor(smashVal);
+        
+        document.getElementById('card-sentiment').textContent = formatNumber(summary.sentiment_score);
+        document.getElementById('card-seal').textContent = formatNumber(summary.avg_seal_amount);
+        
+        // 操作建议
+        const advice = summary.smash_trade_advice || summary.smash_advantage || '暂无建议';
+        document.getElementById('trade-advice').textContent = advice;
+        
+        // 周期
+        const cycleEl = document.getElementById('cycle-phase');
+        cycleEl.textContent = summary.cycle_phase || '未知';
+        
+        // 砸盘信号
+        document.getElementById('smash-signal').textContent = summary.smash_signal || '--';
+        
+        // 砸盘系数走势图
+        renderSmashChart(data.smash_chart || []);
+        
+        // 预测
+        renderPredictions(data.predictions || [], 'prediction-cards');
+        
+    } catch (e) {
+        console.error('Dashboard load error:', e);
+    }
+}
+
+function renderSmashChart(chartData) {
+    const ctx = document.getElementById('smashChart');
+    if (smashChartInstance) smashChartInstance.destroy();
+    
+    const labels = chartData.map(d => d.date);
+    const values = chartData.map(d => d.value);
+    const colors = values.map(v => {
+        if (v < 3) return '#0ecb81';
+        if (v <= 5) return '#fcd535';
+        return '#f6465d';
+    });
+    
+    smashChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: '砸盘系数',
+                data: values,
+                borderColor: '#f0b90b',
+                backgroundColor: 'rgba(240,185,11,0.1)',
+                pointBackgroundColor: colors,
+                pointRadius: 6,
+                pointHoverRadius: 8,
+                tension: 0.3,
+                fill: true,
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        afterLabel: (ctx) => {
+                            const item = chartData[ctx.dataIndex];
+                            return item ? `最高连板: ${item.max_boards || '--'}` : '';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { ticks: { color: '#9ca3af', maxRotation: 45 }, grid: { color: 'rgba(45,55,72,0.3)' } },
+                y: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(45,55,72,0.3)' } }
+            }
+        }
+    });
+}
+
+function renderPredictions(predictions, containerId) {
+    const container = document.getElementById(containerId);
+    if (!predictions || (Array.isArray(predictions) && predictions.length === 0) || (typeof predictions === 'object' && !Array.isArray(predictions) && Object.keys(predictions).length === 0)) {
+        container.innerHTML = '<div class="text-muted">暂无预测数据</div>';
+        return;
+    }
+    
+    const typeNames = {
+        'limit_up_count': '涨停数量',
+        'max_continuous_boards': '最高连板',
+        'main_concept': '主线概念',
+        'sentiment_direction': '情绪方向',
+        'operation_advice': '操作建议',
+        'smash_prediction': '砸盘预测',
+    };
+    
+    // predictions is a dict: {type: {predicted, confidence, ...}}
+    let items = [];
+    if (typeof predictions === 'object' && !Array.isArray(predictions)) {
+        items = Object.entries(predictions).map(([type, data]) => ({type, data}));
+    } else if (Array.isArray(predictions)) {
+        items = predictions.map(p => ({type: p.type || p.prediction_type || '', data: p}));
+    }
+    
+    container.innerHTML = items.map(({type, data}) => {
+        const pred = data.predicted || data.advice || data.value || '--';
+        const conf = data.confidence || 0;
+        const reason = data.reason || data.detail || '';
+        return `
+            <div class="col-6 col-md-4 col-lg-3">
+                <div class="pred-card">
+                    <div class="pred-type">${typeNames[type] || type}</div>
+                    <div class="pred-value">${pred}</div>
+                    <div class="pred-confidence">置信度: ${formatNumber(conf * 100, 0)}%</div>
+                    ${reason ? `<div class="pred-confidence" style="margin-top:2px;font-size:0.65rem">${reason.substring(0, 50)}${reason.length > 50 ? '...' : ''}</div>` : ''}
+                </div>
+            </div>`;
+    }).join('');
+}
+
+// ============ 每日分析 ============
+let dailyPollTimer = null;
+let sealPieInstance = null;
+let conceptBarInstance = null;
+
+async function runDailyAnalysis() {
+    const btn = document.getElementById('btn-run-daily');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 执行中...';
+    
+    document.getElementById('daily-progress').style.display = 'block';
+    document.getElementById('daily-results').style.display = 'none';
+    
+    try {
+        const resp = await postJSON('/api/daily', {});
+        if (resp.success) {
+            pollDailyStatus(resp.task_id);
+        } else {
+            alert('启动失败: ' + (resp.error || '未知错误'));
+            resetDailyBtn();
+        }
+    } catch (e) {
+        alert('请求失败: ' + e.message);
+        resetDailyBtn();
+    }
+}
+
+function pollDailyStatus(taskId) {
+    dailyPollTimer = setInterval(async () => {
+        try {
+            const resp = await fetchJSON(`/api/daily/status?task_id=${taskId}`);
+            if (!resp.success) return;
+            const data = resp.data;
+            
+            document.getElementById('daily-progress-bar').style.width = data.progress + '%';
+            document.getElementById('daily-status-text').textContent = data.message;
+            
+            if (data.status === 'completed') {
+                clearInterval(dailyPollTimer);
+                document.getElementById('daily-spinner').style.display = 'none';
+                document.getElementById('daily-status-text').textContent = '✅ 分析完成';
+                resetDailyBtn();
+                if (data.result) showDailyResults(data.result);
+            } else if (data.status === 'error') {
+                clearInterval(dailyPollTimer);
+                document.getElementById('daily-status-text').textContent = '❌ ' + data.message;
+                resetDailyBtn();
+            }
+        } catch (e) {
+            console.error('Poll error:', e);
+        }
+    }, 2000);
+}
+
+function resetDailyBtn() {
+    const btn = document.getElementById('btn-run-daily');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-play-fill"></i> 执行每日分析';
+}
+
+function showDailyResults(result) {
+    document.getElementById('daily-results').style.display = 'block';
+    const analysis = result.analysis || {};
+    
+    // 连板梯队
+    const tiers = analysis.board_tiers || {};
+    const tiersHtml = Object.entries(tiers).map(([level, stocks]) => {
+        const stockList = Array.isArray(stocks) ? stocks.join('、') : 
+                         (typeof stocks === 'string' ? stocks : JSON.stringify(stocks));
+        return `<div class="tier-item">
+            <span class="tier-level">${level}</span>
+            <span class="tier-stocks">${stockList || '无'}</span>
+        </div>`;
+    }).join('');
+    document.getElementById('board-tiers').innerHTML = tiersHtml || '<div class="text-muted">无数据</div>';
+    
+    // 封板质量饼图
+    const sealData = analysis.seal_quality || {};
+    renderSealPie(sealData);
+    
+    // 概念热度
+    const conceptData = analysis.concept_heat || {};
+    renderConceptBar(conceptData);
+    
+    // 预测
+    renderPredictions(result.predictions || [], 'daily-prediction-cards');
+}
+
+function renderSealPie(sealData) {
+    const ctx = document.getElementById('sealPieChart');
+    if (sealPieInstance) sealPieInstance.destroy();
+    
+    // 从 seal_quality 提取数据
+    let labels = ['强封', '中封', '弱封'];
+    let values = [0, 0, 0];
+    
+    if (sealData.strong) values[0] = Array.isArray(sealData.strong) ? sealData.strong.length : (sealData.strong.count || sealData.strong);
+    if (sealData.medium) values[1] = Array.isArray(sealData.medium) ? sealData.medium.length : (sealData.medium.count || sealData.medium);
+    if (sealData.weak) values[2] = Array.isArray(sealData.weak) ? sealData.weak.length : (sealData.weak.count || sealData.weak);
+    
+    // 如果没有结构化数据，尝试其他格式
+    if (values.every(v => v === 0) && typeof sealData === 'object') {
+        const keys = Object.keys(sealData);
+        if (keys.length > 0) {
+            labels = keys;
+            values = keys.map(k => {
+                const v = sealData[k];
+                return Array.isArray(v) ? v.length : (typeof v === 'object' ? (v.count || 0) : (v || 0));
+            });
+        }
+    }
+    
+    sealPieInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels,
+            datasets: [{
+                data: values,
+                backgroundColor: ['#0ecb81', '#fcd535', '#f6465d'],
+                borderWidth: 0,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { color: '#9ca3af' } }
+            }
+        }
+    });
+}
+
+function renderConceptBar(conceptData) {
+    const ctx = document.getElementById('conceptBarChart');
+    if (conceptBarInstance) conceptBarInstance.destroy();
+    
+    // 转换概念数据为数组并排序
+    let entries = [];
+    if (Array.isArray(conceptData)) {
+        entries = conceptData.map(c => ({
+            name: c.concept || c.name || '',
+            count: c.count || 0
+        }));
+    } else if (typeof conceptData === 'object') {
+        entries = Object.entries(conceptData).map(([name, count]) => ({
+            name, count: typeof count === 'object' ? (count.count || 0) : count
+        }));
+    }
+    
+    entries.sort((a, b) => b.count - a.count);
+    entries = entries.slice(0, 10);
+    
+    const labels = entries.map(e => e.name);
+    const values = entries.map(e => e.count);
+    
+    conceptBarInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: '涨停数',
+                data: values,
+                backgroundColor: 'rgba(240,185,11,0.6)',
+                borderColor: '#f0b90b',
+                borderWidth: 1,
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y',
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(45,55,72,0.3)' } },
+                y: { ticks: { color: '#9ca3af', font: { size: 11 } }, grid: { display: false } }
+            }
+        }
+    });
+}
+
+// ============ 回测 ============
+let btPollTimer = null;
+let backtestBarInstance = null;
+
+async function runBacktest() {
+    const btn = document.getElementById('btn-run-backtest');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 执行中...';
+    
+    const maxDays = parseInt(document.getElementById('backtest-days').value) || 30;
+    
+    document.getElementById('backtest-progress').style.display = 'block';
+    document.getElementById('backtest-results').style.display = 'none';
+    
+    try {
+        const resp = await postJSON('/api/backtest', { max_days: maxDays });
+        if (resp.success) {
+            pollBacktestStatus(resp.task_id);
+        } else {
+            alert('启动失败: ' + (resp.error || '未知错误'));
+            resetBtBtn();
+        }
+    } catch (e) {
+        alert('请求失败: ' + e.message);
+        resetBtBtn();
+    }
+}
+
+function pollBacktestStatus(taskId) {
+    btPollTimer = setInterval(async () => {
+        try {
+            const resp = await fetchJSON(`/api/daily/status?task_id=${taskId}`);
+            if (!resp.success) return;
+            const data = resp.data;
+            
+            document.getElementById('bt-progress-bar').style.width = data.progress + '%';
+            document.getElementById('bt-status-text').textContent = data.message;
+            
+            if (data.status === 'completed') {
+                clearInterval(btPollTimer);
+                document.getElementById('bt-spinner').style.display = 'none';
+                document.getElementById('bt-status-text').textContent = '✅ 回测完成';
+                resetBtBtn();
+                if (data.result) showBacktestResults(data.result);
+            } else if (data.status === 'error') {
+                clearInterval(btPollTimer);
+                document.getElementById('bt-status-text').textContent = '❌ ' + data.message;
+                resetBtBtn();
+            }
+        } catch (e) {
+            console.error('Poll error:', e);
+        }
+    }, 3000);
+}
+
+function resetBtBtn() {
+    const btn = document.getElementById('btn-run-backtest');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-play-fill"></i> 执行回测';
+}
+
+function showBacktestResults(result) {
+    document.getElementById('backtest-results').style.display = 'block';
+    
+    document.getElementById('bt-total-days').textContent = result.total_days || '--';
+    document.getElementById('bt-total-pred').textContent = result.total_predictions || '--';
+    document.getElementById('bt-total-verif').textContent = result.total_verifications || '--';
+    
+    // 柱状图
+    const results = result.results || [];
+    renderBacktestBar(results);
+    
+    // 报告
+    if (result.report) {
+        document.getElementById('backtest-report').innerHTML = marked.parse(result.report);
+    }
+}
+
+function renderBacktestBar(results) {
+    const ctx = document.getElementById('backtestBarChart');
+    if (backtestBarInstance) backtestBarInstance.destroy();
+    
+    const labels = results.map(r => r.date);
+    const values = results.map(r => r.avg_score || 0);
+    
+    backtestBarInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: '平均验证得分',
+                data: values,
+                backgroundColor: values.map(v => {
+                    if (v >= 0.7) return 'rgba(14,203,129,0.7)';
+                    if (v >= 0.4) return 'rgba(252,213,53,0.7)';
+                    return 'rgba(246,70,93,0.7)';
+                }),
+                borderRadius: 3,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: '#9ca3af', maxRotation: 45, font: { size: 9 } }, grid: { color: 'rgba(45,55,72,0.3)' } },
+                y: { min: 0, max: 1, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(45,55,72,0.3)' } }
+            }
+        }
+    });
+}
+
+// ============ 报告 ============
+async function loadReports() {
+    try {
+        const resp = await fetchJSON('/api/reports');
+        if (!resp.success) return;
+        const reports = resp.data;
+        
+        const container = document.getElementById('report-list');
+        if (!reports || reports.length === 0) {
+            container.innerHTML = '<div class="text-muted">暂无报告</div>';
+            return;
+        }
+        
+        container.innerHTML = reports.map(r => `
+            <div class="report-item" onclick="loadReportDetail('${r.date}', this)">
+                <div>
+                    <div class="report-date">
+                        <i class="bi bi-file-earmark-text text-gold"></i> ${r.date}
+                    </div>
+                    <div class="report-meta">${r.modified}</div>
+                </div>
+                <div class="report-meta">${(r.size / 1024).toFixed(1)}KB</div>
+            </div>
+        `).join('');
+    } catch (e) {
+        console.error('Load reports error:', e);
+    }
+}
+
+async function loadReportDetail(date, el) {
+    // 高亮选中
+    document.querySelectorAll('.report-item').forEach(e => e.classList.remove('active'));
+    if (el) el.classList.add('active');
+    
+    document.getElementById('report-title').textContent = `报告 - ${date}`;
+    document.getElementById('report-content').innerHTML = '<div class="text-muted">加载中...</div>';
+    
+    try {
+        const resp = await fetchJSON(`/api/reports/${date}`);
+        if (!resp.success) {
+            document.getElementById('report-content').innerHTML = `<div class="text-danger">${resp.error}</div>`;
+            return;
+        }
+        document.getElementById('report-content').innerHTML = marked.parse(resp.data.content);
+    } catch (e) {
+        document.getElementById('report-content').innerHTML = `<div class="text-danger">加载失败: ${e.message}</div>`;
+    }
+}
+
+// ============ 模型健康度 ============
+let weightChartInstance = null;
+let credibilityChartInstance = null;
+let weightHistInstance = null;
+
+async function loadModelHealth() {
+    try {
+        const resp = await fetchJSON('/api/model/health');
+        if (!resp.success) return;
+        const data = resp.data;
+        const health = data.health || {};
+        
+        // 概览
+        document.getElementById('health-status').textContent = health.status || '--';
+        document.getElementById('health-credibility').textContent = formatNumber(health.avg_credibility, 3);
+        document.getElementById('health-total').textContent = health.total_factors || '--';
+        document.getElementById('health-low').textContent = health.low_credibility_count || 0;
+        
+        const factors = health.factors || [];
+        const details = data.weight_details || [];
+        
+        // 权重柱状图
+        renderWeightChart(factors);
+        
+        // 可信度柱状图
+        renderCredibilityChart(factors);
+        
+        // smash_factor 突出
+        renderSmashFactorDetail(details);
+        
+        // 权重变化轨迹
+        renderWeightHistory(details);
+        
+        // 修正日志
+        renderCorrectionLogs(data.correction_logs || []);
+        
+    } catch (e) {
+        console.error('Health load error:', e);
+    }
+}
+
+const factorLabels = {
+    'momentum_factor': '动量因子',
+    'continuation_factor': '晋级率因子',
+    'concept_heat_factor': '概念热度',
+    'seal_quality_factor': '封板质量',
+    'cycle_factor': '周期因子',
+    'dragon_factor': '龙头因子',
+    'volume_factor': '量能因子',
+    'breadth_factor': '宽度因子',
+    'smash_factor': '砸盘系数',
+};
+
+function renderWeightChart(factors) {
+    const ctx = document.getElementById('weightChart');
+    if (weightChartInstance) weightChartInstance.destroy();
+    
+    const labels = factors.map(f => factorLabels[f.name] || f.name);
+    const values = factors.map(f => f.weight);
+    
+    weightChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: '权重',
+                data: values,
+                backgroundColor: factors.map(f => 
+                    f.name === 'smash_factor' ? 'rgba(240,185,11,0.8)' : 'rgba(30,144,255,0.6)'
+                ),
+                borderColor: factors.map(f => 
+                    f.name === 'smash_factor' ? '#f0b90b' : '#1e90ff'
+                ),
+                borderWidth: 1,
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: '#9ca3af', font: { size: 9 }, maxRotation: 45 }, grid: { display: false } },
+                y: { min: 0, max: 1, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(45,55,72,0.3)' } }
+            }
+        }
+    });
+}
+
+function renderCredibilityChart(factors) {
+    const ctx = document.getElementById('credibilityChart');
+    if (credibilityChartInstance) credibilityChartInstance.destroy();
+    
+    const labels = factors.map(f => factorLabels[f.name] || f.name);
+    const values = factors.map(f => f.credibility);
+    
+    credibilityChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: '可信度',
+                data: values,
+                backgroundColor: values.map(v => {
+                    if (v >= 0.7) return 'rgba(14,203,129,0.7)';
+                    if (v >= 0.4) return 'rgba(252,213,53,0.7)';
+                    return 'rgba(246,70,93,0.7)';
+                }),
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: '#9ca3af', font: { size: 9 }, maxRotation: 45 }, grid: { display: false } },
+                y: { min: 0, max: 1, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(45,55,72,0.3)' } }
+            }
+        }
+    });
+}
+
+function renderSmashFactorDetail(details) {
+    const container = document.getElementById('smash-factor-detail');
+    const smash = details.find(d => d.name === 'smash_factor');
+    
+    if (!smash) {
+        container.innerHTML = '<div class="text-muted">smash_factor 未初始化</div>';
+        return;
+    }
+    
+    const credColor = smash.credibility >= 0.7 ? 'var(--green)' : 
+                      smash.credibility >= 0.4 ? 'var(--yellow)' : 'var(--red)';
+    
+    container.innerHTML = `
+        <div class="col-md-3 text-center">
+            <div class="card-label">当前权重</div>
+            <div style="font-size:2rem;font-weight:700;color:var(--gold)">${formatNumber(smash.weight, 3)}</div>
+        </div>
+        <div class="col-md-3 text-center">
+            <div class="card-label">可信度</div>
+            <div style="font-size:2rem;font-weight:700;color:${credColor}">${formatNumber(smash.credibility, 3)}</div>
+        </div>
+        <div class="col-md-3 text-center">
+            <div class="card-label">连续误判</div>
+            <div style="font-size:2rem;font-weight:700">${smash.consecutive_misses}</div>
+        </div>
+        <div class="col-md-3 text-center">
+            <div class="card-label">状态</div>
+            <div style="font-size:1.3rem;font-weight:700;color:${credColor}">
+                ${smash.credibility >= 0.7 ? '🟢 健康' : smash.credibility >= 0.4 ? '🟡 警告' : '🔴 危险'}
+            </div>
+        </div>
+    `;
+}
+
+function renderWeightHistory(details) {
+    const ctx = document.getElementById('weightHistoryChart');
+    if (weightHistInstance) weightHistInstance.destroy();
+    
+    // 收集所有日期
+    const allDates = new Set();
+    details.forEach(d => {
+        (d.history || []).forEach(h => {
+            if (h.date) allDates.add(h.date);
+        });
+    });
+    const dates = [...allDates].sort();
+    
+    if (dates.length === 0) {
+        // 没有历史数据，显示提示
+        weightHistInstance = new Chart(ctx, {
+            type: 'line',
+            data: { labels: ['暂无历史数据'], datasets: [] },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+        return;
+    }
+    
+    // 取几个关键因素画线
+    const keyFactors = ['smash_factor', 'momentum_factor', 'cycle_factor', 'continuation_factor'];
+    const colors = ['#f0b90b', '#1e90ff', '#0ecb81', '#f6465d'];
+    
+    const datasets = keyFactors.map((name, idx) => {
+        const detail = details.find(d => d.name === name);
+        const history = detail ? (detail.history || []) : [];
+        const dateWeightMap = {};
+        history.forEach(h => { if (h.date) dateWeightMap[h.date] = h.weight; });
+        
+        return {
+            label: factorLabels[name] || name,
+            data: dates.map(d => dateWeightMap[d] !== undefined ? dateWeightMap[d] : null),
+            borderColor: colors[idx],
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            pointRadius: 2,
+            spanGaps: true,
+        };
+    });
+    
+    weightHistInstance = new Chart(ctx, {
+        type: 'line',
+        data: { labels: dates, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#9ca3af' } } },
+            scales: {
+                x: { ticks: { color: '#9ca3af', maxRotation: 45, font: { size: 9 } }, grid: { color: 'rgba(45,55,72,0.3)' } },
+                y: { min: 0, max: 1, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(45,55,72,0.3)' } }
+            }
+        }
+    });
+}
+
+function renderCorrectionLogs(logs) {
+    const tbody = document.getElementById('correction-log-body');
+    if (!logs || logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-muted">暂无修正记录</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = logs.slice(0, 30).map(log => {
+        const factorLabel = factorLabels[log.factor_name] || log.factor_name;
+        return `<tr>
+            <td>${log.date || '--'}</td>
+            <td>${log.trigger || '--'}</td>
+            <td>${factorLabel}</td>
+            <td>${formatNumber(log.old_weight, 3)}</td>
+            <td>${formatNumber(log.new_weight, 3)}</td>
+            <td>${log.reason || '--'}</td>
+        </tr>`;
+    }).join('');
+}
+
+// ============ 初始化 ============
+document.addEventListener('DOMContentLoaded', () => {
+    loadDashboard();
+});

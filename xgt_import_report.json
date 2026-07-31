@@ -1,0 +1,242 @@
+{
+  "import_time": "2026-07-30 11:31:11",
+  "date_range": {
+    "start": "2026-06-30",
+    "end": "2026-07-30"
+  },
+  "stats": {
+    "total_days": 23,
+    "success_days": 22,
+    "failed_days": 1,
+    "total_limit_up": 1953,
+    "total_break": 697,
+    "total_limit_down": 1080,
+    "total_records": 3730
+  },
+  "daily_details": [
+    {
+      "date": "2026-06-30",
+      "limit_up": 169,
+      "break": 35,
+      "limit_down": 20,
+      "explosion_rate": 0.1716,
+      "market_heat": 78.2,
+      "max_boards": 6,
+      "rise_fall_ratio": 1.3191
+    },
+    {
+      "date": "2026-07-01",
+      "limit_up": 218,
+      "break": 87,
+      "limit_down": 11,
+      "explosion_rate": 0.2852,
+      "market_heat": 86.6,
+      "max_boards": 7,
+      "rise_fall_ratio": 3.6423
+    },
+    {
+      "date": "2026-07-02",
+      "limit_up": 154,
+      "break": 56,
+      "limit_down": 41,
+      "explosion_rate": 0.2667,
+      "market_heat": 69.21,
+      "max_boards": 5,
+      "rise_fall_ratio": 0.7151
+    },
+    {
+      "date": "2026-07-03",
+      "limit_up": 156,
+      "break": 56,
+      "limit_down": 24,
+      "explosion_rate": 0.2642,
+      "market_heat": 82.41,
+      "max_boards": 4,
+      "rise_fall_ratio": 2.2266
+    },
+    {
+      "date": "2026-07-06",
+      "limit_up": 71,
+      "break": 44,
+      "limit_down": 51,
+      "explosion_rate": 0.3826,
+      "market_heat": 64.05,
+      "max_boards": 5,
+      "rise_fall_ratio": 0.5543
+    },
+    {
+      "date": "2026-07-07",
+      "limit_up": 34,
+      "break": 24,
+      "limit_down": 42,
+      "explosion_rate": 0.4138,
+      "market_heat": 55.87,
+      "max_boards": 5,
+      "rise_fall_ratio": 0.1409
+    },
+    {
+      "date": "2026-07-08",
+      "limit_up": 55,
+      "break": 17,
+      "limit_down": 44,
+      "explosion_rate": 0.2361,
+      "market_heat": 67.35,
+      "max_boards": 6,
+      "rise_fall_ratio": 0.434
+    },
+    {
+      "date": "2026-07-09",
+      "limit_up": 74,
+      "break": 23,
+      "limit_down": 14,
+      "explosion_rate": 0.2371,
+      "market_heat": 71.86,
+      "max_boards": 7,
+      "rise_fall_ratio": 0.8908
+    },
+    {
+      "date": "2026-07-10",
+      "limit_up": 90,
+      "break": 92,
+      "limit_down": 5,
+      "explosion_rate": 0.5055,
+      "market_heat": 70.65,
+      "max_boards": 2,
+      "rise_fall_ratio": 2.1787
+    },
+    {
+      "date": "2026-07-13",
+      "limit_up": 30,
+      "break": 13,
+      "limit_down": 174,
+      "explosion_rate": 0.3023,
+      "market_heat": 53.57,
+      "max_boards": 3,
+      "rise_fall_ratio": 0.1782
+    },
+    {
+      "date": "2026-07-14",
+      "limit_up": 85,
+      "break": 20,
+      "limit_down": 25,
+      "explosion_rate": 0.1905,
+      "market_heat": 85.45,
+      "max_boards": 3,
+      "rise_fall_ratio": 3.2255
+    },
+    {
+      "date": "2026-07-15",
+      "limit_up": 73,
+      "break": 21,
+      "limit_down": 33,
+      "explosion_rate": 0.2234,
+      "market_heat": 77.93,
+      "max_boards": 4,
+      "rise_fall_ratio": 1.657
+    },
+    {
+      "date": "2026-07-16",
+      "limit_up": 46,
+      "break": 26,
+      "limit_down": 38,
+      "explosion_rate": 0.3611,
+      "market_heat": 67.98,
+      "max_boards": 5,
+      "rise_fall_ratio": 0.8698
+    },
+    {
+      "date": "2026-07-17",
+      "limit_up": 34,
+      "break": 10,
+      "limit_down": 198,
+      "explosion_rate": 0.2273,
+      "market_heat": 58.97,
+      "max_boards": 4,
+      "rise_fall_ratio": 0.0851
+    },
+    {
+      "date": "2026-07-20",
+      "limit_up": 54,
+      "break": 39,
+      "limit_down": 236,
+      "explosion_rate": 0.4194,
+      "market_heat": 58.44,
+      "max_boards": 3,
+      "rise_fall_ratio": 0.5004
+    },
+    {
+      "date": "2026-07-21",
+      "limit_up": 120,
+      "break": 8,
+      "limit_down": 26,
+      "explosion_rate": 0.0625,
+      "market_heat": 79.14,
+      "max_boards": 4,
+      "rise_fall_ratio": 1.2938
+    },
+    {
+      "date": "2026-07-22",
+      "limit_up": 47,
+      "break": 38,
+      "limit_down": 9,
+      "explosion_rate": 0.4471,
+      "market_heat": 60.59,
+      "max_boards": 5,
+      "rise_fall_ratio": 0.3923
+    },
+    {
+      "date": "2026-07-23",
+      "limit_up": 127,
+      "break": 25,
+      "limit_down": 2,
+      "explosion_rate": 0.1645,
+      "market_heat": 90.28,
+      "max_boards": 6,
+      "rise_fall_ratio": 3.4969
+    },
+    {
+      "date": "2026-07-24",
+      "limit_up": 42,
+      "break": 14,
+      "limit_down": 24,
+      "explosion_rate": 0.25,
+      "market_heat": 61.64,
+      "max_boards": 4,
+      "rise_fall_ratio": 0.1153
+    },
+    {
+      "date": "2026-07-27",
+      "limit_up": 121,
+      "break": 13,
+      "limit_down": 6,
+      "explosion_rate": 0.097,
+      "market_heat": 92.26,
+      "max_boards": 5,
+      "rise_fall_ratio": 18.2276
+    },
+    {
+      "date": "2026-07-28",
+      "limit_up": 67,
+      "break": 22,
+      "limit_down": 48,
+      "explosion_rate": 0.2472,
+      "market_heat": 71.51,
+      "max_boards": 6,
+      "rise_fall_ratio": 0.8878
+    },
+    {
+      "date": "2026-07-29",
+      "limit_up": 86,
+      "break": 14,
+      "limit_down": 9,
+      "explosion_rate": 0.14,
+      "market_heat": 90.83,
+      "max_boards": 7,
+      "rise_fall_ratio": 3.3828
+    },
+    {
+      "date": "2026-07-30",
+      "error": "object of type 'NoneType' has no len()"
+    }
+  ]
+}

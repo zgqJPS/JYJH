@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market Advisor - 自适应市场分析系统</title>
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Marked.js -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@9.0.0/marked.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-nav px-3">
+        <div class="container-fluid">
+            <a class="navbar-brand fw-bold" href="#">
+                <i class="bi bi-graph-up-arrow text-gold"></i> Market Advisor
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navContent">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navContent">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#" data-tab="dashboard">
+                            <i class="bi bi-speedometer2"></i> 仪表盘
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-tab="daily">
+                            <i class="bi bi-calendar-check"></i> 每日分析
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-tab="backtest">
+                            <i class="bi bi-clock-history"></i> 回测
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-tab="reports">
+                            <i class="bi bi-file-earmark-text"></i> 报告
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-tab="health">
+                            <i class="bi bi-heart-pulse"></i> 模型健康度
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区 -->
+    <div class="container-fluid main-content">
+        <!-- ============ 仪表盘 ============ -->
+        <div id="tab-dashboard" class="tab-content active">
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h4 class="text-light mb-0"><i class="bi bi-speedometer2 text-gold"></i> 市场概览</h4>
+                    <small class="text-muted" id="dashboard-date">加载中...</small>
+                </div>
+            </div>
+            
+            <!-- 概览卡片 -->
+            <div class="row g-3 mb-4" id="dashboard-cards">
+                <div class="col-6 col-md-4 col-xl">
+                    <div class="card card-dark">
+                        <div class="card-body text-center">
+                            <div class="card-label">涨停数</div>
+                            <div class="card-value" id="card-limit-up">--</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-4 col-xl">
+                    <div class="card card-dark">
+                        <div class="card-body text-center">
+                            <div class="card-label">最高连板</div>
+                            <div class="card-value" id="card-max-board">--</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-4 col-xl">
+                    <div class="card card-dark">
+                        <div class="card-body text-center">
+                            <div class="card-label">砸盘系数</div>
+                            <div class="card-value smash-value" id="card-smash">--</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-4 col-xl">
+                    <div class="card card-dark">
+                        <div class="card-body text-center">
+                            <div class="card-label">情绪得分</div>
+                            <div class="card-value" id="card-sentiment">--</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-4 col-xl">
+                    <div class="card card-dark">
+                        <div class="card-body text-center">
+                            <div class="card-label">封单总额(亿)</div>
+                            <div class="card-value" id="card-seal">--</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 操作建议 + 周期阶段 -->
+            <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <div class="card card-dark h-100">
+                        <div class="card-body">
+                            <h6 class="text-gold"><i class="bi bi-lightbulb"></i> 最新操作建议</h6>
+                            <div class="advice-text" id="trade-advice">加载中...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card card-dark h-100">
+                        <div class="card-body text-center">
+                            <h6 class="text-gold"><i class="bi bi-arrow-repeat"></i> 市场周期</h6>
+                            <div class="cycle-badge" id="cycle-phase">--</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card card-dark h-100">
+                        <div class="card-body text-center">
+                            <h6 class="text-gold"><i class="bi bi-bullseye"></i> 砸盘信号</h6>
+                            <div class="smash-signal" id="smash-signal">--</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 砸盘系数走势图 -->
+            <div class="row g-3 mb-4">
+                <div class="col-12">
+                    <div class="card card-dark">
+                        <div class="card-body">
+                            <h6 class="text-gold"><i class="bi bi-graph-up"></i> 砸盘系数近10日走势</h6>
+                            <div class="chart-container">
+                                <canvas id="smashChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 预测结果 -->
+            <div class="row g-3" id="prediction-section">
+                <div class="col-12">
+                    <div class="card card-dark">
+                        <div class="card-body">
+                            <h6 class="text-gold"><i class="bi bi-magic"></i> 最新预测</h6>
+                            <div class="row g-2" id="prediction-cards">
+                                <div class="text-muted">加载中...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ 每日分析 ============ -->
+        <div id="tab-daily" class="tab-content">
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h4 class="text-light mb-3"><i class="bi bi-calendar-check text-gold"></i> 每日分析</h4>
+                    <button class="btn btn-gold" id="btn-run-daily" onclick="runDailyAnalysis()">
+                        <i class="bi bi-play-fill"></i> 执行每日分析
+                    </button>
+                </div>
+            </div>
+
+            <!-- 执行状态 -->
+            <div class="row mb-4" id="daily-progress" style="display:none">
+                <div class="col-12">
+                    <div class="card card-dark">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center mb-2">
+                                <div class="spinner-border spinner-border-sm text-gold me-2" id="daily-spinner"></div>
+                                <span id="daily-status-text">执行中...</span>
+                            </div>
+                            <div class="progress">
+                                <div class="progress-bar bg-gold" id="daily-progress-bar" style="width:0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 分析结果 -->
+            <div id="daily-results" style="display:none">
+                <!-- 连板梯队 -->
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <div class="card card-dark">
+                            <div class="card-body">
+                                <h6 class="text-gold"><i class="bi bi-layers"></i> 连板梯队</h6>
+                                <div id="board-tiers"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 封板质量饼图 -->
+                    <div class="col-md-6">
+                        <div class="card card-dark">
+                            <div class="card-body">
+                                <h6 class="text-gold"><i class="bi bi-pie-chart"></i> 封板质量分布</h6>
+                                <div class="chart-container-sm">
+                                    <canvas id="sealPieChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 概念热度TOP10 -->
+                <div class="row g-3 mb-4">
+                    <div class="col-12">
+                        <div class="card card-dark">
+                            <div class="card-body">
+                                <h6 class="text-gold"><i class="bi bi-fire"></i> 概念热度 TOP10</h6>
+                                <div class="chart-container">
+                                    <canvas id="conceptBarChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 预测结果 -->
+                <div class="row g-3">
+                    <div class="col-12">
+                        <div class="card card-dark">
+                            <div class="card-body">
+                                <h6 class="text-gold"><i class="bi bi-magic"></i> 预测结果</h6>
+                                <div class="row g-2" id="daily-prediction-cards"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ 回测 ============ -->
+        <div id="tab-backtest" class="tab-content">
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h4 class="text-light mb-3"><i class="bi bi-clock-history text-gold"></i> 回测模式</h4>
+                    <div class="d-flex align-items-center gap-3 flex-wrap">
+                        <div class="input-group" style="max-width:250px">
+                            <span class="input-group-text bg-dark text-light border-secondary">回测天数</span>
+                            <input type="number" class="form-control bg-dark text-light border-secondary" 
+                                   id="backtest-days" value="30" min="5" max="200">
+                        </div>
+                        <button class="btn btn-gold" id="btn-run-backtest" onclick="runBacktest()">
+                            <i class="bi bi-play-fill"></i> 执行回测
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 回测状态 -->
+            <div class="row mb-4" id="backtest-progress" style="display:none">
+                <div class="col-12">
+                    <div class="card card-dark">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center mb-2">
+                                <div class="spinner-border spinner-border-sm text-gold me-2" id="bt-spinner"></div>
+                                <span id="bt-status-text">回测执行中，请耐心等待...</span>
+                            </div>
+                            <div class="progress">
+                                <div class="progress-bar bg-gold" id="bt-progress-bar" style="width:0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 回测结果 -->
+            <div id="backtest-results" style="display:none">
+                <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <div class="card card-dark">
+                            <div class="card-body text-center">
+                                <div class="card-label">回测天数</div>
+                                <div class="card-value text-gold" id="bt-total-days">--</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card card-dark">
+                            <div class="card-body text-center">
+                                <div class="card-label">总预测数</div>
+                                <div class="card-value text-gold" id="bt-total-pred">--</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card card-dark">
+                            <div class="card-body text-center">
+                                <div class="card-label">总验证数</div>
+                                <div class="card-value text-gold" id="bt-total-verif">--</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 准确率柱状图 -->
+                <div class="row g-3 mb-4">
+                    <div class="col-12">
+                        <div class="card card-dark">
+                            <div class="card-body">
+                                <h6 class="text-gold"><i class="bi bi-bar-chart"></i> 每日验证平均得分</h6>
+                                <div class="chart-container">
+                                    <canvas id="backtestBarChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 回测报告 -->
+                <div class="row g-3">
+                    <div class="col-12">
+                        <div class="card card-dark">
+                            <div class="card-body">
+                                <h6 class="text-gold"><i class="bi bi-file-text"></i> 回测报告</h6>
+                                <div class="markdown-body" id="backtest-report"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ 报告 ============ -->
+        <div id="tab-reports" class="tab-content">
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h4 class="text-light mb-3"><i class="bi bi-file-earmark-text text-gold"></i> 历史报告</h4>
+                </div>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="card card-dark">
+                        <div class="card-body">
+                            <h6 class="text-gold mb-3">报告列表</h6>
+                            <div id="report-list">
+                                <div class="text-muted">加载中...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-8">
+                    <div class="card card-dark">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="text-gold mb-0" id="report-title">请选择报告</h6>
+                            </div>
+                            <div class="markdown-body" id="report-content">
+                                <div class="text-muted">点击左侧报告列表查看内容</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ 模型健康度 ============ -->
+        <div id="tab-health" class="tab-content">
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h4 class="text-light mb-3"><i class="bi bi-heart-pulse text-gold"></i> 模型健康度</h4>
+                </div>
+            </div>
+
+            <!-- 健康度概览 -->
+            <div class="row g-3 mb-4">
+                <div class="col-md-3">
+                    <div class="card card-dark">
+                        <div class="card-body text-center">
+                            <div class="card-label">系统状态</div>
+                            <div class="card-value" id="health-status">--</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card card-dark">
+                        <div class="card-body text-center">
+                            <div class="card-label">平均可信度</div>
+                            <div class="card-value text-gold" id="health-credibility">--</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card card-dark">
+                        <div class="card-body text-center">
+                            <div class="card-label">总因素数</div>
+                            <div class="card-value" id="health-total">--</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card card-dark">
+                        <div class="card-body text-center">
+                            <div class="card-label">低可信因素</div>
+                            <div class="card-value text-danger" id="health-low">--</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 权重 + 可信度可视化 -->
+            <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <div class="card card-dark">
+                        <div class="card-body">
+                            <h6 class="text-gold"><i class="bi bi-sliders"></i> 因素权重分布</h6>
+                            <div class="chart-container-sm">
+                                <canvas id="weightChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card card-dark">
+                        <div class="card-body">
+                            <h6 class="text-gold"><i class="bi bi-shield-check"></i> 因素可信度</h6>
+                            <div class="chart-container-sm">
+                                <canvas id="credibilityChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- smash_factor 突出显示 -->
+            <div class="row g-3 mb-4">
+                <div class="col-12">
+                    <div class="card card-smash">
+                        <div class="card-body">
+                            <h6 class="text-gold"><i class="bi bi-exclamation-diamond"></i> 砸盘系数因子 (smash_factor) 状态</h6>
+                            <div class="row g-3" id="smash-factor-detail">
+                                <div class="text-muted">加载中...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 权重变化轨迹 -->
+            <div class="row g-3 mb-4">
+                <div class="col-12">
+                    <div class="card card-dark">
+                        <div class="card-body">
+                            <h6 class="text-gold"><i class="bi bi-graph-up"></i> 权重变化轨迹</h6>
+                            <div class="chart-container">
+                                <canvas id="weightHistoryChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 修正日志 -->
+            <div class="row g-3">
+                <div class="col-12">
+                    <div class="card card-dark">
+                        <div class="card-body">
+                            <h6 class="text-gold"><i class="bi bi-journal-text"></i> 自适应修正日志</h6>
+                            <div class="table-responsive">
+                                <table class="table table-dark table-striped table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>日期</th>
+                                            <th>触发</th>
+                                            <th>因素</th>
+                                            <th>旧权重</th>
+                                            <th>新权重</th>
+                                            <th>原因</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="correction-log-body">
+                                        <tr><td colspan="6" class="text-muted">加载中...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>

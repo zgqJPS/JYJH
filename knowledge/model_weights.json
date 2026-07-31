@@ -1,0 +1,56 @@
+{
+  "momentum_factor": {
+    "weight": 0.8555,
+    "credibility": 1.0,
+    "consecutive_misses": 1,
+    "updated_at": "2026-07-31 15:38:01.769889"
+  },
+  "continuation_factor": {
+    "weight": 0.7318,
+    "credibility": 1.0,
+    "consecutive_misses": 1,
+    "updated_at": "2026-07-31 15:38:01.850132"
+  },
+  "concept_heat_factor": {
+    "weight": 0.05,
+    "credibility": 0.95,
+    "consecutive_misses": 1,
+    "updated_at": "2026-07-31 15:38:01.834391"
+  },
+  "seal_quality_factor": {
+    "weight": 0.05,
+    "credibility": 0.3,
+    "consecutive_misses": 42,
+    "updated_at": "2026-07-30 09:43:43.958121"
+  },
+  "cycle_factor": {
+    "weight": 0.05,
+    "credibility": 1.0,
+    "consecutive_misses": 1,
+    "updated_at": "2026-07-31 15:38:01.797541"
+  },
+  "dragon_factor": {
+    "weight": 0.0695,
+    "credibility": 1.0,
+    "consecutive_misses": 0,
+    "updated_at": "2026-07-31 15:38:00.811193"
+  },
+  "volume_factor": {
+    "weight": 0.5,
+    "credibility": 1.0,
+    "consecutive_misses": 0,
+    "updated_at": "2026-07-30 09:11:16.973018"
+  },
+  "breadth_factor": {
+    "weight": 0.05,
+    "credibility": 1.0,
+    "consecutive_misses": 1,
+    "updated_at": "2026-07-31 15:37:27.866708"
+  },
+  "smash_factor": {
+    "weight": 0.05,
+    "credibility": 1.0,
+    "consecutive_misses": 1,
+    "updated_at": "2026-07-31 15:38:01.816522"
+  }
+}
