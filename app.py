@@ -8,39 +8,39 @@ app.py - Web 应用入口（V6 增强部署版）
 新增：模拟交易回测功能
 """
 
-导入 sys
-导入 os
-导入 json
-导入 uuid
-导入 threading
-导入 logging
-导入 mimetypes
-导入 requests
-导入 time
-导入 schedule
-从 http.server 导入 HTTPServer, SimpleHTTPRequestHandler
-从 urllib.parse 导入 urlparse, parse_qs
-从 datetime 导入 datetime, timedelta
+import sys
+import os
+import json
+import uuid
+import threading
+import logging
+import mimetypes
+import requests
+import time
+import schedule
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
+from datetime import datetime, timedelta
 
-# 确保项目路径在 sys.path 中
+# 确保项目路径在 sys.path
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_DIR)
 
-从配置文件 导入 DB_PATH、KNOWLEDGE_DIR
-从数据库 导入 Database
-从主程序 导入 run_fetch
+from config import DB_PATH, KNOWLEDGE_DIR
+from db import Database
+from main import run_fetch
 
 # ============ Server酱微信通知 ============
-类 ServerChanNotifier:
+class ServerChanNotifier:
     def __init__(self, sckey: str):
         self.sckey = sckey
         self.base_url = f"https://sctapi.ftqq.com/{sckey}.send"
 
     def send_notification(self, title: str, content: str) -> bool:
         if not self.sckey:
-            返回 False
+            return False
         try:
-{'标题': 标题[:32], '描述': 内容, '频道'
+            payload = {'title': title[:32], 'desp': content, 'channel': 9}
             response = requests.post(self.base_url, data=payload, timeout=30)
             if response.status_code == 200:
                 result = response.json()
@@ -147,25 +147,18 @@ class TradingDayChecker:
     def is_trading_day(date_str: str = None) -> tuple:
         if not date_str:
             date_str = datetime.now().strftime("%Y-%m-%d")
-        # 简单判断：周末和特定节假日（示例）
         dt = datetime.strptime(date_str, "%Y-%m-%d")
         if dt.weekday() >= 5:
             return False, f"{date_str} 是周末"
-        # 这里可扩展节假日列表，为简化，默认非周末为交易日
         return True, f"{date_str} 是交易日"
 
 
 # ============ 日期工具 ============
 def get_next_trading_day(date_str: str) -> str:
-    """
-    从数据库获取指定日期之后的下一个有数据的交易日
-    若无后续交易日，返回 None
-    """
     try:
         db = Database(DB_PATH)
         all_dates = db.get_all_dates()
         if date_str not in all_dates:
-            # 尝试找大于该日期的第一个日期
             for d in all_dates:
                 if d > date_str:
                     return d
@@ -176,7 +169,6 @@ def get_next_trading_day(date_str: str) -> str:
         return None
     except Exception as e:
         logger.error(f"获取下一交易日失败: {e}")
-        # 降级：简单加一天
         try:
             dt = datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)
             return dt.strftime("%Y-%m-%d")
@@ -185,13 +177,9 @@ def get_next_trading_day(date_str: str) -> str:
 
 
 def _determine_analysis_date(preferred_date=None):
-    """
-    确定分析日期（数据日期）和预测目标日期
-    """
     today = datetime.now().strftime("%Y-%m-%d")
     data_date = preferred_date
     if not data_date:
-        # 优先检查今天数据是否已入库
         try:
             db = Database(DB_PATH)
             conn = db.conn
@@ -207,7 +195,6 @@ def _determine_analysis_date(preferred_date=None):
             data_date = None
     if not data_date:
         return None, None
-    # 获取下一交易日
     target_date = get_next_trading_day(data_date)
     return data_date, target_date
 
@@ -264,7 +251,6 @@ def _run_fetch_task(task_id, params):
             tasks[task_id]["result"] = {"fetched_count": 0}
             return
 
-    # 自动推荐
     if result and result > 0 and _smart_recommender:
         try:
             with tasks_lock:
@@ -272,17 +258,14 @@ def _run_fetch_task(task_id, params):
                 tasks[task_id]["progress"] = 75
             data_date, target_date = _determine_analysis_date(date_str)
             if data_date:
-                # 信号检测
                 if _live_tracker:
                     try:
                         _live_tracker.evaluate_signals(data_date, DB_PATH)
                     except:
                         pass
-                # 市场分析
                 market_state = _smart_recommender.analyze_current_market(data_date, DB_PATH)
                 recs = _smart_recommender.generate_recommendations(data_date, top_n=5, db_path=DB_PATH)
                 next_day = _smart_recommender.recommend_for_next_day(data_date, DB_PATH)
-                # 序列化
                 rec_serialized = []
                 for r in recs:
                     rec_serialized.append({
@@ -298,7 +281,6 @@ def _run_fetch_task(task_id, params):
                         "limit_up_days": r.get("limit_up_days", 1),
                         "dimension_scores": r.get("dimension_scores", {}),
                         "dimension_reasons": r.get("dimension_reasons", {}),
-                        # 新增等级相关字段
                         "confidence_level": r.get("confidence_level", "C"),
                         "confidence_name": r.get("confidence_name", "C级·中等"),
                         "historical_win_rate": r.get("historical_win_rate", 0.50),
@@ -331,7 +313,6 @@ def _run_fetch_task(task_id, params):
                     tasks[task_id]["status"] = "completed"
                     predict_msg = f"（预测{target_date}）" if target_date else ""
                     tasks[task_id]["message"] = f"数据获取成功，基于{data_date}生成{len(rec_serialized)}只个股预测{predict_msg}"
-                # 微信通知
                 try:
                     send_recommend_notification(data_date, rec_serialized, market_state, next_day)
                 except:
@@ -440,7 +421,6 @@ def _run_recommend_task(task_id, params):
                 "historical_win_rate": r.get("historical_win_rate", 0.50),
                 "condition_match": r.get("condition_match", ""),
             })
-
         with tasks_lock:
             tasks[task_id]["progress"] = 100
             tasks[task_id]["status"] = "completed"
@@ -470,7 +450,6 @@ def _run_recommend_task(task_id, params):
                     "overall_strategy": next_day.get("overall_strategy", ""),
                 },
             }
-        # 微信通知
         try:
             send_recommend_notification(data_date, rec_serialized, market_state, next_day)
         except:
@@ -572,14 +551,12 @@ def _run_auto_upgrade_task(task_id, params):
 
 
 def _run_simulate_task(task_id, params):
-    """执行模拟交易回测"""
     from simulator import Simulator
     with tasks_lock:
         tasks[task_id]["message"] = "启动模拟交易..."
         tasks[task_id]["progress"] = 10
 
     try:
-        # 获取参数
         start_date = params.get('start_date')
         end_date = params.get('end_date')
         init_cash = params.get('init_cash', 1000000)
@@ -589,21 +566,18 @@ def _run_simulate_task(task_id, params):
         max_positions = params.get('max_positions', 5)
         position_pct = params.get('position_pct', 0.2)
 
-        # 如果未指定结束日期，使用最新交易日
         if not end_date:
             db = Database(DB_PATH)
             all_dates = db.get_all_dates()
             end_date = all_dates[-1] if all_dates else datetime.now().strftime("%Y-%m-%d")
             db.close()
         if not start_date:
-            # 默认从半年前开始
             start_date = (datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=180)).strftime("%Y-%m-%d")
 
         with tasks_lock:
             tasks[task_id]["message"] = f"正在回测 {start_date} 至 {end_date}..."
             tasks[task_id]["progress"] = 30
 
-        # 创建模拟器并运行
         sim = Simulator(
             start_date=start_date,
             end_date=end_date,
@@ -912,7 +886,6 @@ def handle_start_auto_upgrade(body):
 
 
 def handle_start_simulate(body):
-    """启动模拟交易回测"""
     data = json.loads(body) if body else {}
     task_id = str(uuid.uuid4())[:8]
     thread = threading.Thread(target=run_task, args=(task_id, "simulate", data))
@@ -1026,14 +999,11 @@ def handle_modules_status():
 
 
 def handle_exit_signals(params):
-    """获取出场信号（市场+个股）"""
     if _exit_strategy is None:
         return {"success": False, "error": "exit_strategy模块未加载"}
     try:
         date = params.get('date', [None])[0]
-        # 市场层面
         market_advice = _exit_strategy.check_market_exit_signals(date=date)
-        # 个股层面（获取今日高板个股的出场信号）
         stock_advices = []
         latest_date = market_advice.get('date')
         if latest_date:
@@ -1052,7 +1022,6 @@ def handle_exit_signals(params):
                         stock_advices.append(advice)
             except Exception as e:
                 logger.warning(f"获取个股出场信号失败: {e}")
-        # 综合判断
         overall_action = 'NORMAL'
         if market_advice['market_exit_urgency'] == 'CRITICAL':
             overall_action = 'CLEAR_ALL'
@@ -1196,15 +1165,11 @@ class RequestHandler(SimpleHTTPRequestHandler):
 # ============ 模板生成（保持原有） ============
 
 def create_templates():
-    """生成所有模板和静态文件（仅在文件不存在时创建）"""
     os.makedirs(TEMPLATE_DIR, exist_ok=True)
     os.makedirs(STATIC_DIR, exist_ok=True)
 
-    # 仅当 index.html 不存在时才生成
     index_path = os.path.join(TEMPLATE_DIR, "index.html")
     if not os.path.exists(index_path):
-        # 这里可以放置完整的 index.html 内容（可从前一个版本复制）
-        # 为简洁起见，此处留空，实际部署时可复制完整内容
         pass
 
     app_js_path = os.path.join(STATIC_DIR, "app.js")
@@ -1219,7 +1184,6 @@ def create_templates():
 # ============ 部署增强功能（ngrok 隧道、数据状态检查、定时任务） ============
 
 def setup_ngrok():
-    """设置ngrok隧道 - 修复已存在隧道的问题"""
     try:
         from pyngrok import ngrok, conf, exception
         
@@ -1292,14 +1256,12 @@ def setup_ngrok():
 
 # ============ 定时任务函数 ============
 def run_scheduler():
-    """调度线程主循环"""
     while True:
         schedule.run_pending()
         time.sleep(60)
 
 
 def scheduled_fetch_and_recommend():
-    """定时执行：获取今日数据 -> 推荐 -> 微信通知"""
     today = datetime.now().strftime("%Y-%m-%d")
     is_trading, msg = TradingDayChecker.is_trading_day(today)
     if not is_trading:
@@ -1307,7 +1269,6 @@ def scheduled_fetch_and_recommend():
         return
 
     logger.info("定时任务开始执行: 获取数据并生成推荐")
-    # 1. 获取数据
     try:
         result = run_fetch(date_str=today)
         if result is None or result == 0:
@@ -1318,7 +1279,6 @@ def scheduled_fetch_and_recommend():
         logger.error(f"定时任务: 获取数据异常 {e}")
         return
 
-    # 2. 生成推荐并发送通知
     try:
         data_date, target_date = _determine_analysis_date(today)
         if not data_date:
@@ -1327,11 +1287,9 @@ def scheduled_fetch_and_recommend():
         if _smart_recommender is None:
             logger.warning("定时任务: 智能推荐模块未加载")
             return
-        # 市场分析
         market_state = _smart_recommender.analyze_current_market(data_date, DB_PATH)
         recs = _smart_recommender.generate_recommendations(data_date, top_n=5, db_path=DB_PATH)
         next_day = _smart_recommender.recommend_for_next_day(data_date, DB_PATH)
-        # 序列化推荐
         rec_serialized = []
         for r in recs:
             rec_serialized.append({
@@ -1352,7 +1310,6 @@ def scheduled_fetch_and_recommend():
                 "historical_win_rate": r.get("historical_win_rate", 0.50),
                 "condition_match": r.get("condition_match", ""),
             })
-        # 发送微信通知
         send_recommend_notification(data_date, rec_serialized, market_state, next_day)
         logger.info("定时任务: 微信通知发送完成")
     except Exception as e:
@@ -1366,16 +1323,13 @@ class ReuseHTTPServer(HTTPServer):
 
 
 def main():
-    # 打印系统标题
     print("=" * 70)
     print("[*] 市场分析系统 V6 (增强部署版)")
     print("=" * 70)
     
-    # 创建模板（如果不存在）
     create_templates()
     print("[OK] 模板文件已准备")
     
-    # 启动定时任务（每日15:00）
     try:
         schedule.every().day.at("15:00").do(scheduled_fetch_and_recommend)
         threading.Thread(target=run_scheduler, daemon=True).start()
@@ -1383,7 +1337,6 @@ def main():
     except Exception as e:
         print(f"[WARN] 定时任务设置失败: {e}")
     
-    # 检查数据库数据状态
     try:
         db = Database(DB_PATH)
         all_dates = db.get_all_dates()
@@ -1398,12 +1351,10 @@ def main():
     except Exception as e:
         print(f"[WARN] 检查数据状态失败: {e}")
     
-    # 启动 ngrok 隧道（可选）
     public_url = setup_ngrok()
     if public_url:
         print(f"[NET] 公网访问地址: {public_url}")
     
-    # 打印本地地址
     import socket
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
@@ -1413,7 +1364,6 @@ def main():
     print("[OK] 服务器启动成功！")
     print("[INFO] 按 Ctrl+C 停止服务器")
     
-    # 启动 HTTP 服务器
     host = "0.0.0.0"
     port = int(os.environ.get("PORT", 5000))
     server = ReuseHTTPServer((host, port), RequestHandler)
@@ -1425,6 +1375,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    ()
