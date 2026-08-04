@@ -1,21 +1,21 @@
 {
   "momentum_factor": {
-    "weight": 0.6601,
-    "credibility": 0.35,
-    "consecutive_misses": 3,
-    "updated_at": "2026-08-04 14:07:45.826169"
+    "weight": 0.6648,
+    "credibility": 0.4,
+    "consecutive_misses": 0,
+    "updated_at": "2026-08-04 16:52:57.617474"
   },
   "continuation_factor": {
-    "weight": 0.5455,
-    "credibility": 0.5,
-    "consecutive_misses": 7,
-    "updated_at": "2026-08-04 14:07:46.818378"
+    "weight": 0.5496,
+    "credibility": 0.55,
+    "consecutive_misses": 0,
+    "updated_at": "2026-08-04 16:52:57.651125"
   },
   "concept_heat_factor": {
-    "weight": 0.05,
+    "weight": 0.056,
     "credibility": 1.0,
-    "consecutive_misses": 1,
-    "updated_at": "2026-08-04 14:07:45.148891"
+    "consecutive_misses": 0,
+    "updated_at": "2026-08-04 16:52:57.640189"
   },
   "seal_quality_factor": {
     "weight": 0.05,
@@ -42,10 +42,10 @@
     "updated_at": "2026-07-30 09:11:16.973018"
   },
   "breadth_factor": {
-    "weight": 0.05,
+    "weight": 0.056,
     "credibility": 1.0,
-    "consecutive_misses": 1,
-    "updated_at": "2026-08-03 16:26:33.636475"
+    "consecutive_misses": 0,
+    "updated_at": "2026-08-04 16:52:57.600913"
   },
   "smash_factor": {
     "weight": 0.05,

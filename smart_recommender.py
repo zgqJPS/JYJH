@@ -27,6 +27,8 @@ from collections import defaultdict, Counter
 from typing import Dict, List, Any, Optional, Tuple
 
 from config import DB_PATH
+from predictor import SentimentStateEngine   # 新增导入，用于统一周期判断
+from db import Database                     # 用于创建 Database 实例
 
 # ─────────────────────────── 日志配置 ───────────────────────────
 logging.basicConfig(
@@ -203,16 +205,27 @@ def get_daily_summary(date: str, db_path: str = DB_PATH) -> Optional[Dict]:
     finally:
         conn.close()
 
+# ==================== 修改：get_smash_coefficient 优先返回当天有效值 ====================
 def get_smash_coefficient(date: str, db_path: str = DB_PATH) -> Optional[float]:
     conn = get_conn(db_path)
     try:
+        # 先查当天
         row = conn.execute("""
             SELECT smash_coefficient FROM smash_coefficients
-            WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT 1
+            WHERE trade_date = ?
+        """, (date,)).fetchone()
+        if row and row['smash_coefficient'] is not None:
+            return row['smash_coefficient']
+        # 若无当天有效值，取最近一天的有效值（非 NULL）
+        row = conn.execute("""
+            SELECT smash_coefficient FROM smash_coefficients
+            WHERE trade_date < ? AND smash_coefficient IS NOT NULL
+            ORDER BY trade_date DESC LIMIT 1
         """, (date,)).fetchone()
         return row['smash_coefficient'] if row else None
     finally:
         conn.close()
+# =======================================================================
 
 def get_concept_statistics(date: str, db_path: str = DB_PATH) -> List[Dict]:
     conn = get_conn(db_path)
@@ -308,16 +321,16 @@ def get_model_weights(db_path: str = DB_PATH) -> Dict[str, float]:
     finally:
         conn.close()
 
-# ─────────────────────────── 市场分析（统一使用 CycleModel） ───────────────────────────
+# ─────────────────────────── 市场分析（统一使用 SentimentStateEngine） ───────────────────────────
 
 def analyze_current_market(date: str, db_path: str = DB_PATH) -> Dict[str, Any]:
     """
-    分析当前市场状态 - 统一使用 CycleModel 获取周期
+    分析当前市场状态 - 统一使用 SentimentStateEngine 获取周期
     """
-    from cycle_model import CycleModel
+    from cycle_model import CycleModel  # 保留备用
 
     summary = get_daily_summary(date, db_path)
-    smash = get_smash_coefficient(date, db_path)
+    smash = get_smash_coefficient(date, db_path)  # 使用修改后的函数
     concepts = get_concept_statistics(date, db_path)
 
     smash_trend = 'stable'
@@ -371,14 +384,28 @@ def analyze_current_market(date: str, db_path: str = DB_PATH) -> Dict[str, Any]:
     max_boards = summary.get('max_continuous_boards', 0) if summary else 0
     limit_up_count = summary.get('limit_up_count', 0) if summary else 0
 
-    # ==================== 统一使用 CycleModel 获取周期 ====================
+    # ==================== 统一使用 SentimentStateEngine 获取周期阶段 ====================
+    cycle_phase = '蓄力爬升期'  # 默认
     try:
-        cycle_model = CycleModel(db_path)
-        phase_result = cycle_model.detect_phase(date)
-        cycle_phase = phase_result.get('phase', '')
+        # 创建 Database 实例（用于 SentimentStateEngine）
+        db_obj = Database(db_path)
+        state_engine = SentimentStateEngine(db_obj)
+        state_info = state_engine.infer_state(date)
+        state_eng = state_info.get('state', 'MAIN_RISE')
+        # 映射英文状态到中文（CycleModel 的4阶段）
+        phase_map = {
+            'ICEPOINT': '冰点酝酿期',
+            'STARTUP': '蓄力爬升期',
+            'MAIN_RISE': '蓄力爬升期',  # 近似
+            'CLIMAX': '爆发高潮期',
+            'EBB': '崩塌退潮期',
+        }
+        cycle_phase = phase_map.get(state_eng, '蓄力爬升期')
+        logger.info(f"[周期] 使用 SentimentStateEngine 推断: {state_eng} -> {cycle_phase}")
+        db_obj.close()  # 关闭连接
     except Exception as e:
-        logger.warning(f"CycleModel 调用失败，使用备用方法: {e}")
-        # 备用方法：基于砸盘系数和涨停数简单判断（仅用于降级）
+        logger.warning(f"SentimentStateEngine 调用失败，使用备用方法: {e}")
+        # 备用方法：基于砸盘系数和涨停数简单判断（原逻辑）
         if smash is not None:
             if smash >= 7.0:
                 cycle_phase = '崩塌退潮期'
@@ -400,6 +427,8 @@ def analyze_current_market(date: str, db_path: str = DB_PATH) -> Dict[str, Any]:
                 cycle_phase = '蓄力爬升期'
             else:
                 cycle_phase = '冰点酝酿期'
+        logger.info(f"[周期] 备用方法推断: {cycle_phase}")
+    # ===============================================================================
 
     # 市值偏好映射（仅4阶段）
     cap_pref = CYCLE_CAP_PREFERENCE.get(cycle_phase, 'medium')

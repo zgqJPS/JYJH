@@ -169,8 +169,8 @@ def _parse_stock_item(item: Dict, pool_name: str) -> Optional[Dict]:
             'change_percent': item.get('change_percent', 0) or 0,
             'latest_price': item.get('price', 0) or 0,
             'turnover_rate': item.get('turnover_ratio', 0) or 0,
-            'seal_amount': item.get('buy_lock_volume_ratio', 0) or 0,  # 选股宝返回的是比例0~1
-            'seal_ratio': item.get('buy_lock_volume_ratio', 0) or 0,    # 直接使用
+            'seal_amount': item.get('buy_lock_volume_ratio', 0) or 0,
+            'seal_ratio': item.get('buy_lock_volume_ratio', 0) or 0,
             'limit_up_days': item.get('limit_up_days', 1) or 1,
             'first_limit_up_time': first_limit_up_time,
             'open_times': item.get('break_limit_up_times', 0) or 0,
@@ -355,15 +355,19 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
         except Exception as e:
             logger.error(f"保存每日汇总失败: {e}")
         
-        # 6. 计算并保存砸盘系数（写入smash_coefficients）
+        # ========== 修改：砸盘系数计算与存储逻辑（强制写入，即使无前日数据） ==========
         try:
+            # 获取前一交易日（用于计算晋升比率）
             prev_row = conn.execute("""
                 SELECT date FROM xgt_limit_up_detail 
                 WHERE date < ? GROUP BY date ORDER BY date DESC LIMIT 1
             """, (date,)).fetchone()
             
+            smash_coeff = None  # 初始化为 None
+            
             if prev_row:
                 prev_date = prev_row['date'] if isinstance(prev_row, sqlite3.Row) else prev_row[0]
+                # 获取今日和昨日的连板分布
                 today_boards = {}
                 for r in conn.execute("""
                     SELECT limit_up_days, COUNT(*) as cnt FROM xgt_limit_up_detail 
@@ -379,6 +383,7 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                     prev_boards[r['limit_up_days']] = r['cnt']
                 
                 ratios = []
+                # 遍历2到今日最高板
                 max_board = max(today_boards.keys()) if today_boards else 0
                 for n in range(2, max_board + 1):
                     today_n = today_boards.get(n, 0)
@@ -388,18 +393,45 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                 
                 if ratios:
                     smash_coeff = round(sum(ratios) / len(ratios) * 10, 2)
-                    conn.execute("""
-                        INSERT OR REPLACE INTO smash_coefficients 
-                        (trade_date, smash_coefficient, limit_up_count, max_continuous_days)
-                        VALUES (?, ?, ?, ?)
-                    """, (date, smash_coeff, limit_up_count, max_boards))
-                    logger.info(f"[砸盘系数] {date}: {smash_coeff} (基于{len(ratios)}个晋升比率, 前日{prev_date})")
+                    logger.info(f"[砸盘系数] 计算得到 {date}: {smash_coeff} (基于{len(ratios)}个晋升比率, 前日{prev_date})")
                 else:
-                    logger.info(f"[砸盘系数] {date}: 无有效晋升比率，跳过计算")
+                    # 无有效晋升比率，尝试使用简化估算
+                    first_board = today_boards.get(1, 1)
+                    high_board = sum(today_boards.get(n, 0) for n in range(2, max_board + 1))
+                    if first_board > 0:
+                        smash_coeff = round(high_board / first_board * 10, 2)
+                        logger.info(f"[砸盘系数] 使用简化估算 {date}: {smash_coeff} (高板/首板={high_board}/{first_board})")
+                    else:
+                        logger.info(f"[砸盘系数] {date}: 无有效晋升比率，简化估算失败")
             else:
-                logger.info(f"[砸盘系数] {date}: 无前日数据，跳过计算")
+                # 无前日数据，尝试从最近3天的历史数据估算平均值
+                logger.info(f"[砸盘系数] {date}: 无前日数据，尝试从历史估算")
+                recent_rows = conn.execute("""
+                    SELECT smash_coefficient FROM smash_coefficients
+                    WHERE trade_date < ? AND smash_coefficient IS NOT NULL
+                    ORDER BY trade_date DESC LIMIT 3
+                """, (date,)).fetchall()
+                if recent_rows:
+                    values = [r['smash_coefficient'] for r in recent_rows if r['smash_coefficient'] is not None]
+                    if values:
+                        avg_smash = sum(values) / len(values)
+                        smash_coeff = round(avg_smash, 2)
+                        logger.info(f"[砸盘系数] 使用最近{len(values)}天均值估算 {date}: {smash_coeff}")
+                    else:
+                        smash_coeff = None
+                else:
+                    logger.info(f"[砸盘系数] {date}: 无历史数据，无法估算")
+            
+            # 无论如何，插入一条记录（允许为 NULL）
+            conn.execute("""
+                INSERT OR REPLACE INTO smash_coefficients 
+                (trade_date, smash_coefficient, limit_up_count, max_continuous_days)
+                VALUES (?, ?, ?, ?)
+            """, (date, smash_coeff, limit_up_count, max_boards))
+            logger.info(f"[砸盘系数] {date}: 存储值为 {smash_coeff}")
         except Exception as e:
             logger.warning(f"[砸盘系数] 计算失败(不影响其他数据): {e}")
+        # =================== 修改结束 =====================
         
         conn.commit()
         logger.info(f"[盯盘] 数据已保存到数据库，共{saved_count}条记录")
