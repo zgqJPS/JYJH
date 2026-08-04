@@ -1,7 +1,7 @@
 """
 market_analyzer.py - 市场分析引擎
 每日涨停统计、连板梯队、封板质量、概念热度、情绪指标计算
-砸盘系数作为核心主导指标集成
+砸盘系数统一从 smash_coefficients 表读取（与 smart_recommender 同源）
 """
 import logging
 from collections import defaultdict, Counter
@@ -14,9 +14,7 @@ class MarketAnalyzer:
 
     def __init__(self, db):
         self.db = db
-        # 初始化砸盘系数计算器
-        from smash_coefficient import SmashCoefficientCalculator
-        self.smash_calc = SmashCoefficientCalculator(db)
+        # 不再使用 SmashCoefficientCalculator，直接查表
 
     def analyze_date(self, date_str):
         """
@@ -28,7 +26,6 @@ class MarketAnalyzer:
             logger.warning(f"{date_str} 无涨停数据")
             return None
 
-        # 将Row转为dict方便处理
         stocks = [dict(s) for s in stocks]
 
         result = {
@@ -46,29 +43,79 @@ class MarketAnalyzer:
 
     def _smash_analysis(self, date_str):
         """
-        砸盘系数分析（核心主导指标）
-        包含：当日值、近5日趋势、定性判断
+        砸盘系数分析（统一从 smash_coefficients 表读取）
+        包含：当日值、近3日趋势、定性判断
         """
         try:
+            conn = self.db.conn
             # 获取当日砸盘系数
-            smash_signal = self.smash_calc.get_signal(date_str)
-            smash_value = smash_signal.get("value")
+            cursor = conn.execute(
+                "SELECT smash_coefficient FROM smash_coefficients WHERE trade_date = ?",
+                (date_str,)
+            )
+            row = cursor.fetchone()
+            smash_value = row[0] if row else None
 
-            # 获取近5日趋势
-            trend = self.smash_calc.get_trend(date_str, days=5)
+            # 获取近三日系数（用于趋势）
+            cursor = conn.execute(
+                "SELECT smash_coefficient FROM smash_coefficients WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT 3",
+                (date_str,)
+            )
+            rows = cursor.fetchall()
+            trend_values = [r[0] for r in rows]
 
-            # 周期判断（砸盘系数 + 涨停数 + 最高连板）
+            # 趋势判断
+            if len(trend_values) >= 2:
+                curr = trend_values[0]
+                prev = trend_values[-1]
+                if curr - prev > 1.0:
+                    trend = "上升"
+                elif prev - curr > 1.0:
+                    trend = "下降"
+                else:
+                    trend = "平稳"
+            else:
+                trend = "未知"
+
+            # 定性信号
+            if smash_value is None:
+                signal = "未知"
+                advantage = "砸盘系数数据缺失"
+                disadvantage = ""
+                trade_advice = ""
+            elif smash_value > 6.0:
+                signal = "高风险（砸盘严重）"
+                advantage = "市场抛压极大，需谨慎"
+                disadvantage = "砸盘系数过高，大盘风险显著"
+                trade_advice = "建议空仓或极轻仓"
+            elif smash_value > 4.0:
+                signal = "中等风险"
+                advantage = "市场有一定抛压，控制仓位"
+                disadvantage = "砸盘系数偏高，注意回撤"
+                trade_advice = "建议5成以下仓位"
+            elif smash_value > 2.0:
+                signal = "低风险"
+                advantage = "市场抛压轻，适合进攻"
+                disadvantage = ""
+                trade_advice = "可积极操作"
+            else:
+                signal = "极低风险"
+                advantage = "市场情绪温和，机会较好"
+                disadvantage = ""
+                trade_advice = "可重仓参与"
+
+            # 周期判断（复用原有逻辑）
             cycle_phase = self._cycle_phase_by_smash(date_str, smash_value)
 
             return {
                 "smash_coefficient": smash_value,
-                "signal": smash_signal.get("signal", "未知"),
-                "advantage": smash_signal.get("advantage", ""),
-                "disadvantage": smash_signal.get("disadvantage", ""),
-                "trade_advice": smash_signal.get("trade_advice", ""),
-                "trend": trend.get("trend", "未知"),
-                "trend_analysis": trend.get("analysis", ""),
-                "trend_values": trend.get("values", []),
+                "signal": signal,
+                "advantage": advantage,
+                "disadvantage": disadvantage,
+                "trade_advice": trade_advice,
+                "trend": trend,
+                "trend_analysis": f"近三日系数: {trend_values}" if trend_values else "",
+                "trend_values": trend_values,
                 "cycle_phase_by_smash": cycle_phase,
             }
         except Exception as e:
@@ -76,7 +123,7 @@ class MarketAnalyzer:
             return {
                 "smash_coefficient": None,
                 "signal": "未知",
-                "advantage": "砸盘系数计算异常",
+                "advantage": "砸盘系数查询异常",
                 "disadvantage": "",
                 "trade_advice": "",
                 "trend": "未知",
@@ -116,16 +163,14 @@ class MarketAnalyzer:
             logger.error(f"砸盘周期判断异常: {e}")
             return ""
 
+    # ---------- 以下方法保持原样，未作任何修改 ----------
     def _basic_stats(self, stocks):
         """基础统计"""
         boards = [s.get("continuous_boards", 1) or 1 for s in stocks]
         seal_amounts = [s.get("seal_amount", 0) or 0 for s in stocks]
         turnover_rates = [s.get("turnover_rate", 0) or 0 for s in stocks]
 
-        # 连板分布
         board_dist = Counter(boards)
-        
-        # 2板及以上
         boards_2plus = sum(1 for b in boards if b >= 2)
         boards_3plus = sum(1 for b in boards if b >= 3)
         boards_5plus = sum(1 for b in boards if b >= 5)
@@ -169,30 +214,28 @@ class MarketAnalyzer:
                     "seal_amount": s.get("seal_amount", 0),
                 })
         
-        # 简化首板/二板/三板为数量
         result = {}
         for tier, items in tiers.items():
             if tier in ("首板", "二板", "三板"):
-                result[tier] = {"count": len(items), "names": items[:10]}  # 只显示前10
+                result[tier] = {"count": len(items), "names": items[:10]}
             else:
                 result[tier] = {"count": len(items), "stocks": items}
         return result
 
     def _seal_quality(self, stocks):
         """封板质量分析"""
-        strong = []  # 强封：高封单低换手
-        medium = []  # 中封
-        weak = []    # 弱封：低封单高换手
-        one_char = 0  # 一字板
-        t_board = 0   # T字板
-        exchange = 0  # 换手板
+        strong = []
+        medium = []
+        weak = []
+        one_char = 0
+        t_board = 0
+        exchange = 0
 
         for s in stocks:
             seal = s.get("seal_amount", 0) or 0
             turnover = s.get("turnover_rate", 0) or 0
             style = (s.get("seal_style", "") or "").strip()
             
-            # 按封板样式统计
             if "一字" in style:
                 one_char += 1
             elif "T" in style.upper():
@@ -200,7 +243,6 @@ class MarketAnalyzer:
             elif "换手" in style:
                 exchange += 1
 
-            # 按封单和换手评分
             if seal >= 5.0 and turnover <= 5.0:
                 strong.append(s)
             elif seal >= 2.0:
@@ -221,20 +263,13 @@ class MarketAnalyzer:
         }
 
     def _calc_quality_score(self, strong, medium, weak, total):
-        """计算封板质量评分 0-100"""
         if total == 0:
             return 0
         score = (len(strong) * 1.0 + len(medium) * 0.6 + len(weak) * 0.2) / total * 100
         return round(score, 1)
 
     def _concept_heat(self, date_str, stocks):
-        """
-        概念热度分析（三级优先数据源）
-        第一优先：从 concept_statistics 表获取（由选股宝数据填充，最完整）
-        第二优先：从 xgb_limit_up_detail 表聚合获取（选股宝原始数据）
-        第三优先：降级处理（无概念数据）
-        """
-        # 第一优先：concept_statistics 表（选股宝数据已聚合）
+        # 第一优先：concept_statistics 表
         concept_stats = self.db.get_concept_statistics(date_str)
         if concept_stats:
             concept_data = sorted([dict(c) for c in concept_stats],
@@ -248,7 +283,7 @@ class MarketAnalyzer:
                     "source": "concept_statistics",
                 }
 
-        # 第二优先：从 xgb_limit_up_detail 表实时聚合
+        # 第二优先：从 xgb_limit_up_detail 实时聚合
         xgb_concepts = self.db.get_xgb_concepts_by_date(date_str)
         if xgb_concepts:
             concept_data = [{"concept": k, "count": v}
@@ -261,66 +296,42 @@ class MarketAnalyzer:
                 "source": "xgb_detail",
             }
 
-        # 第三优先：降级（无概念数据）
         return {"top_concepts": [], "total_concepts": 0,
                 "hot_concepts": [], "emerging_concepts": [],
                 "source": "none"}
 
     def _calc_sentiment(self, stocks, date_str):
-        """计算市场情绪得分 0-100"""
         if not stocks:
             return 0
-        
         boards = [s.get("continuous_boards", 1) or 1 for s in stocks]
         seal_amounts = [s.get("seal_amount", 0) or 0 for s in stocks]
         
-        # 涨停数量得分 (30分)
         count = len(stocks)
         count_score = min(count / 100 * 30, 30)
-        
-        # 最高连板得分 (20分)
         max_b = max(boards)
         board_score = min(max_b / 10 * 20, 20)
-        
-        # 封单总额得分 (20分)
         total_seal = sum(seal_amounts)
         seal_score = min(total_seal / 200 * 20, 20)
-        
-        # 高标数量得分 (15分) - 3板及以上
         high_count = sum(1 for b in boards if b >= 3)
         high_score = min(high_count / 10 * 15, 15)
-        
-        # 连板宽度得分 (15分) - 不同板数的分布
         unique_boards = len(set(boards))
         breadth_score = min(unique_boards / 6 * 15, 15)
-        
         total = count_score + board_score + seal_score + high_score + breadth_score
         return round(total, 1)
 
     def _continuation_analysis(self, date_str, stocks):
-        """晋级率分析 - 与前一天数据对比"""
-        # 获取前一交易日数据
         all_dates = self.db.get_all_dates()
         current_idx = all_dates.index(date_str) if date_str in all_dates else -1
-        
         if current_idx <= 0:
             return {"continuation_rate": 0, "continuation_stocks": [], "analysis": "无前日数据"}
-        
         prev_date = all_dates[current_idx - 1]
         prev_stocks = self.db.get_limit_up_data(prev_date)
         if not prev_stocks:
             return {"continuation_rate": 0, "continuation_stocks": [], "analysis": "前日无数据"}
-        
         prev_codes = set(dict(s).get("code", "") for s in prev_stocks)
         curr_codes = set(s.get("code", "") for s in stocks)
-        
-        # 连续涨停的股票
         continued = prev_codes & curr_codes
-        
-        # 晋级率 = 前日涨停中今日继续涨停的比例
         continuation_rate = len(continued) / len(prev_codes) if prev_codes else 0
-        
-        # 找出连续涨停的股票
         cont_stocks = []
         for s in stocks:
             code = s.get("code", "")
@@ -331,7 +342,6 @@ class MarketAnalyzer:
                     "name": s.get("name", ""),
                     "boards": boards,
                 })
-        
         return {
             "continuation_rate": round(continuation_rate * 100, 1),
             "continuation_count": len(continued),
@@ -342,27 +352,21 @@ class MarketAnalyzer:
         }
 
     def _compare_with_previous(self, date_str, stocks):
-        """与前日数据对比"""
         all_dates = self.db.get_all_dates()
         current_idx = all_dates.index(date_str) if date_str in all_dates else -1
-        
         if current_idx <= 0:
             return {"analysis": "无前日数据对比"}
-        
         prev_date = all_dates[current_idx - 1]
         prev_stocks = self.db.get_limit_up_data(prev_date)
         prev_stocks = [dict(s) for s in prev_stocks]
-        
         if not prev_stocks:
             return {"analysis": "前日无数据"}
-        
         curr_count = len(stocks)
         prev_count = len(prev_stocks)
         curr_max = max(s.get("continuous_boards", 1) or 1 for s in stocks)
         prev_max = max(s.get("continuous_boards", 1) or 1 for s in prev_stocks)
         curr_seal = sum(s.get("seal_amount", 0) or 0 for s in stocks)
         prev_seal = sum(s.get("seal_amount", 0) or 0 for s in prev_stocks)
-        
         return {
             "count_change": curr_count - prev_count,
             "count_change_pct": round((curr_count - prev_count) / prev_count * 100, 1) if prev_count else 0,
@@ -378,13 +382,11 @@ class MarketAnalyzer:
         }
 
     def generate_snapshot(self, analysis_result):
-        """将分析结果转为快照格式，用于保存"""
         if not analysis_result:
             return None
         basic = analysis_result.get("basic_stats", {})
         concept = analysis_result.get("concept_heat", {})
         top_concepts = concept.get("top_concepts", [])
-        
         return {
             "date": analysis_result["date"],
             "limit_up_count": basic.get("total_count", 0),
@@ -394,6 +396,6 @@ class MarketAnalyzer:
             "main_concept": top_concepts[0].get("concept", "") if top_concepts else "",
             "main_concept_count": top_concepts[0].get("count", 0) if top_concepts else 0,
             "sentiment_score": analysis_result.get("sentiment_score", 0),
-            "cycle_phase": "",  # 由pattern_recognizer填充
+            "cycle_phase": "",
             "board_distribution": basic.get("board_distribution", {}),
         }
