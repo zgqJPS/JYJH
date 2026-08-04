@@ -653,34 +653,56 @@ def _serialize_backtest_results(results):
 # ============ API 处理 ============
 
 def handle_dashboard():
+    """
+    仪表盘数据接口 - 直接从最新分析结果获取所有数据
+    确保数据实时一致，不依赖快照表
+    """
     try:
         db = Database(DB_PATH)
         db.init_new_tables()
-        snapshots = db.get_daily_snapshots(limit=1)
-        latest = dict(snapshots[0]) if snapshots else {}
-        smash_history = db.get_smash_coefficient_history(limit=10)
-        smash_data = [dict(s) for s in smash_history]
-        latest_smash = smash_data[0] if smash_data else {}
+
         from market_analyzer import MarketAnalyzer
+        from predictor import Predictor
+        from knowledge_base import KnowledgeBase
+
         analyzer = MarketAnalyzer(db)
         all_dates = db.get_all_dates()
         latest_date = all_dates[-1] if all_dates else None
+
         analysis_summary = {}
-        predictions = []
+        predictions = {}
+        smash_chart = []
+
         if latest_date:
+            # 执行完整市场分析
             analysis = analyzer.analyze_date(latest_date)
+
             if analysis:
-                smash_info = analysis.get("smash_analysis", {})
+                # 从分析结果中提取所有数据
                 basic = analysis.get("basic_stats", {})
+                smash_info = analysis.get("smash_analysis", {})
+                sentiment = analysis.get("sentiment_score", 0)
+
+                # 市场周期从砸盘分析中获取（统一使用 cycle_phase_by_smash）
+                cycle_phase = smash_info.get("cycle_phase_by_smash", "")
+
+                # 如果是空，尝试从 daily_snapshot 获取（兼容旧数据）
+                if not cycle_phase:
+                    snapshots = db.get_daily_snapshots(limit=1)
+                    if snapshots:
+                        snap = dict(snapshots[0])
+                        cycle_phase = snap.get("cycle_phase", "")
+
+                # 构建摘要数据
                 analysis_summary = {
                     "date": latest_date,
-                    "limit_up_count": basic.get("total_count", latest.get("limit_up_count", 0)),
-                    "max_continuous_boards": basic.get("max_boards", latest.get("max_continuous_boards", 0)),
-                    "smash_coefficient": smash_info.get("smash_coefficient", latest_smash.get("smash_coefficient")),
-                    "sentiment_score": latest.get("sentiment_score", 0),
-                    "avg_seal_amount": basic.get("total_seal_amount", latest.get("avg_seal_amount", 0)),
-                    "cycle_phase": latest.get("cycle_phase", ""),
-                    "main_concept": latest.get("main_concept", ""),
+                    "limit_up_count": basic.get("total_count", 0),
+                    "max_continuous_boards": basic.get("max_boards", 0),
+                    "smash_coefficient": smash_info.get("smash_coefficient"),
+                    "sentiment_score": sentiment,
+                    "avg_seal_amount": basic.get("avg_seal_amount", 0),
+                    "cycle_phase": cycle_phase,
+                    "main_concept": "",  # 可从 concept_heat 获取，暂不处理
                     "smash_signal": smash_info.get("signal", ""),
                     "smash_trade_advice": smash_info.get("trade_advice", ""),
                     "smash_trend": smash_info.get("trend", ""),
@@ -689,17 +711,36 @@ def handle_dashboard():
                     "seal_quality": analysis.get("seal_quality", {}),
                     "concept_heat": analysis.get("concept_heat", {}),
                 }
-                from predictor import Predictor
-                from knowledge_base import KnowledgeBase
-                kb = KnowledgeBase(db)
-                predictor = Predictor(db, kb)
-                preds = predictor.predict_next_day(latest_date, analysis, {})
-                predictions = _serialize_predictions(preds)
-        smash_chart = []
+
+                # 生成预测
+                try:
+                    kb = KnowledgeBase(db)
+                    predictor = Predictor(db, kb)
+                    preds = predictor.predict_next_day(latest_date, analysis, {})
+                    predictions = _serialize_predictions(preds)
+                except Exception as e:
+                    logger.warning(f"预测生成失败: {e}")
+
+        # 获取砸盘系数历史（用于图表）
+        smash_history = db.get_smash_coefficient_history(limit=10)
+        smash_data = [dict(s) for s in smash_history]
         for s in reversed(smash_data):
-            smash_chart.append({"date": s["date"], "value": s["smash_coefficient"], "max_boards": s["max_continuous_boards"]})
+            smash_chart.append({
+                "date": s["date"],
+                "value": s["smash_coefficient"],
+                "max_boards": s["max_continuous_boards"]
+            })
+
         db.close()
-        return {"success": True, "data": {"summary": analysis_summary, "smash_chart": smash_chart, "predictions": predictions}}
+
+        return {
+            "success": True,
+            "data": {
+                "summary": analysis_summary,
+                "smash_chart": smash_chart,
+                "predictions": predictions
+            }
+        }
     except Exception as e:
         logger.error(f"Dashboard error: {e}", exc_info=True)
         return {"success": False, "error": str(e)}

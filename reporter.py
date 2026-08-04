@@ -2,6 +2,7 @@
 reporter.py - 报告生成模块
 生成每日分析报告（Markdown格式）
 包含市场概况、规律总结、预测结果、历史预测回顾、模型自我修正记录
+统一使用 CycleModel 的4个阶段：冰点酝酿期、蓄力爬升期、爆发高潮期、崩塌退潮期
 """
 import logging
 import json
@@ -243,21 +244,24 @@ class Reporter:
         return lines
 
     def _section_patterns(self, patterns):
-        """模式识别部分"""
+        """模式识别部分 - 统一使用 CycleModel 4阶段"""
         lines = ["## 二、模式识别", ""]
         
         if not patterns:
             lines.append("*无模式识别结果*")
             return lines
         
-        # 周期阶段
+        # 周期阶段 - 使用统一的4阶段 emoji
         phase = patterns.get("cycle_phase", "")
         if phase:
             phase_emoji = {
-                "冰点期": "❄️", "启动期": "🌱", "发酵期": "🔥",
-                "高潮期": "🎆", "退潮期": "📉", "反包期": "🔄"
+                "冰点酝酿期": "❄️",
+                "蓄力爬升期": "🌱",
+                "爆发高潮期": "🎆",
+                "崩塌退潮期": "📉",
             }
-            lines.append(f"### 周期阶段: {phase_emoji.get(phase, '')} {phase}")
+            emoji = phase_emoji.get(phase, "🔄")
+            lines.append(f"### 周期阶段: {emoji} {phase}")
             lines.append("")
         
         # 龙头

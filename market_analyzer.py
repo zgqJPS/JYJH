@@ -3,6 +3,7 @@ market_analyzer.py - 市场分析引擎
 每日涨停统计、连板梯队、封板质量、概念热度、情绪指标计算
 砸盘系数统一从 smash_coefficients 表读取（与 smart_recommender 同源）
 统一使用 xgt_limit_up_detail 表的字段：limit_up_days, seal_ratio
+市场周期统一使用 cycle_model.py
 """
 import logging
 from collections import defaultdict, Counter
@@ -15,6 +16,8 @@ class MarketAnalyzer:
 
     def __init__(self, db):
         self.db = db
+        from cycle_model import CycleModel
+        self.cycle_model = CycleModel(db.db_path if hasattr(db, 'db_path') else None)
 
     def analyze_date(self, date_str):
         """
@@ -97,7 +100,13 @@ class MarketAnalyzer:
                 disadvantage = ""
                 trade_advice = "可重仓参与"
 
-            cycle_phase = self._cycle_phase_by_smash(date_str, smash_value)
+            # 统一使用 CycleModel 获取周期阶段
+            try:
+                phase_result = self.cycle_model.detect_phase(date_str)
+                cycle_phase = phase_result.get("phase", "")
+            except Exception as e:
+                logger.warning(f"CycleModel 调用失败: {e}")
+                cycle_phase = ""
 
             return {
                 "smash_coefficient": smash_value,
@@ -124,30 +133,6 @@ class MarketAnalyzer:
                 "cycle_phase_by_smash": "",
             }
 
-    def _cycle_phase_by_smash(self, date_str, smash_value):
-        """基于砸盘系数的周期判断"""
-        try:
-            stocks = self.db.get_limit_up_data(date_str)
-            if not stocks:
-                return ""
-
-            stocks = [dict(s) for s in stocks]
-            max_board = max(int(s.get("limit_up_days", 1) or 1) for s in stocks)
-            limit_up_total = len(stocks)
-            smash = smash_value if smash_value is not None else 5.0
-
-            if max_board >= 6 and limit_up_total >= 60 and smash >= 4.5:
-                return "高潮期"
-            elif max_board >= 4 and limit_up_total >= 45 and smash <= 3.0:
-                return "主升期"
-            elif limit_up_total >= 60 and max_board <= 4 and smash <= 3.0:
-                return "补涨期"
-            else:
-                return "轮动/低迷期"
-        except Exception as e:
-            logger.error(f"砸盘周期判断异常: {e}")
-            return ""
-
     def _basic_stats(self, stocks):
         """基础统计 - 使用 limit_up_days 替代 continuous_boards"""
         boards = [s.get("limit_up_days", 1) or 1 for s in stocks]
@@ -167,7 +152,7 @@ class MarketAnalyzer:
             "boards_3plus": boards_3plus,
             "boards_5plus": boards_5plus,
             "board_distribution": dict(sorted(board_dist.items())),
-            "total_seal_amount": sum(seal_ratios),  # 注意：现在是比例总和
+            "total_seal_amount": sum(seal_ratios),
             "avg_seal_amount": sum(seal_ratios) / len(seal_ratios) if seal_ratios else 0,
             "avg_turnover": sum(turnover_rates) / len(turnover_rates) if turnover_rates else 0,
         }
@@ -227,7 +212,6 @@ class MarketAnalyzer:
             elif "换手" in style:
                 exchange += 1
 
-            # 封单比 >= 5% 为强封，>= 2% 为中封
             if seal >= 0.05 and turnover <= 5.0:
                 strong.append(s)
             elif seal >= 0.02:
@@ -294,7 +278,7 @@ class MarketAnalyzer:
         max_b = max(boards)
         board_score = min(max_b / 10 * 20, 20)
         total_seal = sum(seal_ratios)
-        seal_score = min(total_seal * 200 * 20, 20)  # seal_ratio 是比例，调整系数
+        seal_score = min(total_seal * 200 * 20, 20)
         high_count = sum(1 for b in boards if b >= 3)
         high_score = min(high_count / 10 * 15, 15)
         unique_boards = len(set(boards))
@@ -370,6 +354,7 @@ class MarketAnalyzer:
         basic = analysis_result.get("basic_stats", {})
         concept = analysis_result.get("concept_heat", {})
         top_concepts = concept.get("top_concepts", [])
+        smash_info = analysis_result.get("smash_analysis", {})
         return {
             "date": analysis_result["date"],
             "limit_up_count": basic.get("total_count", 0),
@@ -379,6 +364,6 @@ class MarketAnalyzer:
             "main_concept": top_concepts[0].get("concept", "") if top_concepts else "",
             "main_concept_count": top_concepts[0].get("count", 0) if top_concepts else 0,
             "sentiment_score": analysis_result.get("sentiment_score", 0),
-            "cycle_phase": "",
+            "cycle_phase": smash_info.get("cycle_phase_by_smash", ""),
             "board_distribution": basic.get("board_distribution", {}),
         }

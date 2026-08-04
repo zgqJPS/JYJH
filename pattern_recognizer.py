@@ -3,6 +3,7 @@ pattern_recognizer.py - 模式识别模块
 识别市场周期阶段、龙头特征、概念轮动模式、封板风格变化
 砸盘系数作为周期判断的核心参数
 统一使用 xgt_limit_up_detail 表的字段：limit_up_days, seal_ratio
+市场周期统一使用 cycle_model.py 的4阶段：冰点酝酿期、蓄力爬升期、爆发高潮期、崩塌退潮期
 """
 import logging
 from collections import Counter, defaultdict
@@ -13,19 +14,15 @@ logger = logging.getLogger(__name__)
 class PatternRecognizer:
     """市场模式识别器"""
 
-    # 周期阶段定义
-    CYCLE_PHASES = ["冰点期", "启动期", "发酵期", "高潮期", "退潮期", "反包期"]
-
     def __init__(self, db):
         self.db = db
         from smash_coefficient import SmashCoefficientCalculator
+        from cycle_model import CycleModel
         self.smash_calc = SmashCoefficientCalculator(db)
+        self.cycle_model = CycleModel(db.db_path if hasattr(db, 'db_path') else None)
 
     def recognize_all(self, date_str, analysis_result):
-        """
-        综合识别所有模式
-        返回模式识别结果字典
-        """
+        """综合识别所有模式"""
         if not analysis_result:
             return {}
 
@@ -44,81 +41,28 @@ class PatternRecognizer:
 
     def recognize_cycle_phase(self, date_str, analysis):
         """
-        识别市场周期阶段（砸盘系数为核心参数）
-        综合判断：砸盘系数周期 + 传统情绪周期，砸盘系数权重最高
+        识别市场周期阶段 - 统一使用 CycleModel
         """
-        basic = analysis.get("basic_stats", {})
-        sentiment = analysis.get("sentiment_score", 0)
-        count = basic.get("total_count", 0)
-        max_b = basic.get("max_boards", 0)
-
-        smash_data = analysis.get("smash_analysis", {})
-        smash_value = smash_data.get("smash_coefficient")
-        smash_cycle = smash_data.get("cycle_phase_by_smash", "")
-
-        if smash_cycle and smash_value is not None:
-            if smash_cycle == "高潮期":
-                return "高潮期"
-            elif smash_cycle == "主升期":
-                return "发酵期"
-            elif smash_cycle == "补涨期":
-                return "启动期"
-            elif smash_cycle == "轮动/低迷期":
-                if sentiment < 25:
-                    return "冰点期"
-                elif sentiment < 40:
-                    return "退潮期"
-                else:
-                    return "发酵期"
-
-        prev_analysis = self._get_previous_analysis(date_str)
-        if prev_analysis:
-            prev_sentiment = prev_analysis.get("sentiment_score", 50)
-            prev_count = prev_analysis.get("basic_stats", {}).get("total_count", 50)
-            if prev_sentiment < 40 and sentiment > 55 and count > prev_count * 1.3:
-                return "反包期"
-            if prev_sentiment > 65 and sentiment < prev_sentiment - 15:
-                return "退潮期"
-
-        if count < 20 and sentiment < 25:
-            return "冰点期"
-        elif count < 40 and sentiment < 45:
-            return "启动期"
-        elif count >= 40 and count < 70 and sentiment >= 45 and sentiment < 65:
-            return "发酵期"
-        elif count >= 70 and sentiment >= 65 and max_b >= 5:
-            return "高潮期"
-        elif count >= 60 and sentiment >= 55:
-            return "发酵期"
-        elif sentiment < 35:
-            return "退潮期"
-        else:
-            if prev_analysis:
-                prev_sentiment = prev_analysis.get("sentiment_score", 50)
-                if sentiment > prev_sentiment + 10:
-                    return "启动期" if sentiment < 50 else "发酵期"
-                elif sentiment < prev_sentiment - 10:
-                    return "退潮期"
-            return "发酵期"
+        try:
+            # 直接调用 CycleModel
+            result = self.cycle_model.detect_phase(date_str)
+            return result.get("phase", "")
+        except Exception as e:
+            logger.error(f"CycleModel 调用失败: {e}")
+            # 降级：使用分析结果中的周期
+            smash_data = analysis.get("smash_analysis", {})
+            return smash_data.get("cycle_phase_by_smash", "")
 
     def recognize_dragon(self, date_str, analysis):
-        """
-        识别龙头特征
-        龙头标准：最高连板 + 概念热度 + 封板质量
-        使用 limit_up_days 替代 continuous_boards
-        """
+        """识别龙头特征"""
         stocks = self.db.get_limit_up_data(date_str)
         if not stocks:
             return {"dragons": [], "analysis": "无数据"}
 
         stocks = [dict(s) for s in stocks]
-        
-        # 按连板数排序 - 使用 limit_up_days
         sorted_stocks = sorted(stocks, key=lambda x: (x.get("limit_up_days", 1) or 1), reverse=True)
-        
         max_board = sorted_stocks[0].get("limit_up_days", 1) or 1 if sorted_stocks else 1
         
-        # 预加载概念数据
         xgb_detail = self.db.get_xgb_detail(date_str)
         concept_map = {}
         for x in xgb_detail:
@@ -140,7 +84,6 @@ class PatternRecognizer:
                 })
 
         dragon_change = self._check_dragon_change(date_str, dragons)
-
         return {
             "dragons": dragons,
             "max_board": max_board,
@@ -149,23 +92,18 @@ class PatternRecognizer:
         }
 
     def _check_dragon_change(self, date_str, dragons):
-        """检查龙头是否更替 - 使用 limit_up_days"""
         all_dates = self.db.get_all_dates()
         current_idx = all_dates.index(date_str) if date_str in all_dates else -1
         if current_idx <= 0:
             return {"changed": False}
-        
         prev_date = all_dates[current_idx - 1]
         prev_stocks = self.db.get_limit_up_data(prev_date)
         if not prev_stocks:
             return {"changed": False}
-        
         prev_stocks = [dict(s) for s in prev_stocks]
         prev_sorted = sorted(prev_stocks, key=lambda x: x.get("limit_up_days", 1) or 1, reverse=True)
         prev_top = prev_sorted[0] if prev_sorted else None
-        
         current_top = dragons[0] if dragons else None
-        
         if prev_top and current_top:
             if prev_top.get("code") != current_top.get("code"):
                 return {
@@ -176,7 +114,6 @@ class PatternRecognizer:
         return {"changed": False}
 
     def _summarize_dragon(self, dragons, max_board):
-        """总结龙头情况"""
         if not dragons:
             return "无明确龙头"
         top = dragons[0]
@@ -188,13 +125,8 @@ class PatternRecognizer:
             return f"龙头不突出，最高仅{max_board}板，市场缺乏标杆"
 
     def recognize_concept_rotation(self, date_str, analysis):
-        """
-        识别概念轮动模式
-        对比近期概念变化趋势（支持选股宝概念数据）
-        """
         all_dates = self.db.get_all_dates()
         current_idx = all_dates.index(date_str) if date_str in all_dates else -1
-        
         if current_idx < 2:
             return {"rotation_pattern": "数据不足", "main_concepts": []}
         
@@ -246,25 +178,17 @@ class PatternRecognizer:
         }
 
     def recognize_seal_style(self, date_str, analysis):
-        """
-        识别封板风格变化
-        一字板占比、T字板占比、换手板占比的变化
-        """
         stocks = self.db.get_limit_up_data(date_str)
         if not stocks:
             return {"style": "无数据"}
-        
         stocks = [dict(s) for s in stocks]
         total = len(stocks)
-        
         one_char = sum(1 for s in stocks if "一字" in (s.get("seal_style", "") or ""))
         t_board = sum(1 for s in stocks if "T" in (s.get("seal_style", "") or "").upper())
         exchange = sum(1 for s in stocks if "换手" in (s.get("seal_style", "") or ""))
-        
         one_pct = one_char / total * 100 if total else 0
         t_pct = t_board / total * 100 if total else 0
         ex_pct = exchange / total * 100 if total else 0
-        
         if one_pct > 40:
             style = "一字板主导"
         elif t_pct > 50:
@@ -273,7 +197,6 @@ class PatternRecognizer:
             style = "换手板为主"
         else:
             style = "混合风格"
-        
         return {
             "style": style,
             "one_char_pct": round(one_pct, 1),
@@ -283,21 +206,14 @@ class PatternRecognizer:
         }
 
     def recognize_market_structure(self, date_str, analysis):
-        """
-        识别市场结构特征
-        连板梯队完整性、龙头与跟风的关系等
-        """
         basic = analysis.get("basic_stats", {})
         tiers = analysis.get("board_tiers", {})
-        
         has_1 = "首板" in tiers
         has_2 = "二板" in tiers and tiers["二板"].get("count", 0) > 0
         has_3 = "三板" in tiers and tiers["三板"].get("count", 0) > 0
         has_high = ("高标" in tiers and tiers["高标"].get("count", 0) > 0) or \
                    ("超高标" in tiers and tiers["超高标"].get("count", 0) > 0)
-        
         tier_count = sum([has_1, has_2, has_3, has_high])
-        
         if tier_count >= 4:
             structure = "梯队完整"
         elif tier_count >= 3:
@@ -306,7 +222,6 @@ class PatternRecognizer:
             structure = "梯队断层"
         else:
             structure = "梯队断裂"
-        
         return {
             "structure": structure,
             "tier_completeness": tier_count,
@@ -317,15 +232,11 @@ class PatternRecognizer:
         }
 
     def recognize_smash_pattern(self, date_str, analysis):
-        """
-        识别砸盘系数的周期性模式
-        """
         try:
             smash_data = analysis.get("smash_analysis", {})
             trend_values = smash_data.get("trend_values", [])
             smash_value = smash_data.get("smash_coefficient")
             trend = smash_data.get("trend", "未知")
-
             if not trend_values or smash_value is None:
                 return {
                     "pattern": "数据不足",
@@ -333,15 +244,12 @@ class PatternRecognizer:
                     "analysis": "砸盘系数历史数据不足，无法识别模式",
                     "risk_level": "未知",
                 }
-
             values = [v.get("value", 0) for v in trend_values]
             current = values[-1] if values else smash_value
-
             if len(values) >= 3:
                 rising_count = sum(1 for i in range(1, len(values)) if values[i] > values[i-1])
                 falling_count = sum(1 for i in range(1, len(values)) if values[i] < values[i-1])
                 sudden_spike = any(values[i] - values[i-1] > 3 for i in range(1, len(values)))
-
                 if sudden_spike:
                     pattern = "突然飙升"
                     analysis_text = "砸盘系数突然飙升，龙头可能断板，注意风险控制"
@@ -370,7 +278,6 @@ class PatternRecognizer:
                 pattern = "观察中"
                 analysis_text = "数据积累中，需更多交易日判断模式"
                 risk_level = "中"
-
             return {
                 "pattern": pattern,
                 "smash_value": smash_value,
@@ -379,7 +286,6 @@ class PatternRecognizer:
                 "risk_level": risk_level,
                 "recent_values": values,
             }
-
         except Exception as e:
             logger.error(f"砸盘模式识别异常: {e}")
             return {
@@ -390,12 +296,10 @@ class PatternRecognizer:
             }
 
     def _get_previous_analysis(self, date_str):
-        """获取前一日的分析结果"""
         all_dates = self.db.get_all_dates()
         current_idx = all_dates.index(date_str) if date_str in all_dates else -1
         if current_idx <= 0:
             return None
-        
         prev_date = all_dates[current_idx - 1]
         snapshots = self.db.get_daily_snapshots(start_date=prev_date, end_date=prev_date)
         if snapshots:
@@ -410,20 +314,17 @@ class PatternRecognizer:
         return None
 
     def _save_patterns(self, patterns):
-        """将识别到的模式保存到知识库"""
         try:
             phase = patterns.get("cycle_phase", "")
             if phase:
                 self.db.save_knowledge("cycle_phase", phase, 
                     metadata={"date": patterns.get("date", ""), "full_pattern": str(patterns.get("market_structure", ""))})
-            
             dragon = patterns.get("dragon_features", {})
             if dragon.get("dragons"):
                 top = dragon["dragons"][0]
                 self.db.save_knowledge("dragon", 
                     f"{top.get('name', '')}({top.get('boards', 0)}板)",
                     metadata={"date": patterns.get("date", ""), "code": top.get("code", "")})
-            
             concept_rot = patterns.get("concept_rotation", {})
             if concept_rot.get("rotation_pattern"):
                 self.db.save_knowledge("concept_rotation", concept_rot["rotation_pattern"],

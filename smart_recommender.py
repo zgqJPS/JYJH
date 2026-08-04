@@ -3,9 +3,10 @@ smart_recommender.py - 智能个股推荐引擎
 ========================================
 基于市场周期阶段、概念热度、连板梯队、封板质量等多维度分析，
 对涨停池 + 炸板池中的个股进行评分，输出带推荐理由和胜率估计的推荐列表。
+市场周期统一使用 CycleModel 的4阶段：冰点酝酿期、蓄力爬升期、爆发高潮期、崩塌退潮期
 
 主要功能:
-  - analyze_current_market(db)   分析当前市场状态
+  - analyze_current_market(db)   分析当前市场状态（统一使用 CycleModel）
   - score_stock(stock_data, market_state)  个股评分（0-100）
   - generate_recommendations(db, top_n=5)  生成推荐列表
   - recommend_for_next_day(db)   次日策略推荐
@@ -83,13 +84,12 @@ CONFIDENCE_LEVELS = {
 
 CONFIDENCE_PRIORITY = ['S', 'A', 'B', 'C']
 
+# 周期阶段与市值偏好映射（仅保留 CycleModel 的4阶段）
 CYCLE_CAP_PREFERENCE = {
-    '冰点期':   'small',
-    '蓄力期':   'small',
-    '发酵期':   'medium',
-    '主升期':   'medium',
-    '高潮期':   'large',
-    '崩塌期':   'small',
+    '冰点酝酿期': 'small',
+    '蓄力爬升期': 'small',
+    '爆发高潮期': 'large',
+    '崩塌退潮期': 'small',
 }
 
 BOARD_PROMOTION_BASELINE = {
@@ -308,38 +308,18 @@ def get_model_weights(db_path: str = DB_PATH) -> Dict[str, float]:
     finally:
         conn.close()
 
-# ─────────────────────────── 市场分析 ───────────────────────────
-
-def _infer_cycle_phase(smash: Optional[float], summary: Optional[Dict],
-                       cycle_ctx: Optional[Dict]) -> str:
-    # 无周期表，使用砸盘系数和涨停数
-    if smash is not None:
-        if smash >= 7.0:
-            return '崩塌期'
-        elif smash >= 4.5:
-            return '高潮期'
-        elif smash >= 3.0:
-            return '主升期'
-        elif smash >= 1.5:
-            return '发酵期'
-        else:
-            return '冰点期'
-    if summary:
-        lu = summary.get('limit_up_count', 50)
-        if lu >= 80:
-            return '高潮期'
-        elif lu >= 60:
-            return '发酵期'
-        elif lu >= 40:
-            return '蓄力期'
-        else:
-            return '冰点期'
-    return '发酵期'
+# ─────────────────────────── 市场分析（统一使用 CycleModel） ───────────────────────────
 
 def analyze_current_market(date: str, db_path: str = DB_PATH) -> Dict[str, Any]:
+    """
+    分析当前市场状态 - 统一使用 CycleModel 获取周期
+    """
+    from cycle_model import CycleModel
+
     summary = get_daily_summary(date, db_path)
     smash = get_smash_coefficient(date, db_path)
     concepts = get_concept_statistics(date, db_path)
+
     smash_trend = 'stable'
     if smash is not None:
         conn = get_conn(db_path)
@@ -357,6 +337,7 @@ def analyze_current_market(date: str, db_path: str = DB_PATH) -> Dict[str, Any]:
                     smash_trend = 'falling'
         finally:
             conn.close()
+
     explosion_rate = 0.0
     explosion_trend = 'stable'
     if summary:
@@ -376,23 +357,59 @@ def analyze_current_market(date: str, db_path: str = DB_PATH) -> Dict[str, Any]:
                     explosion_trend = 'falling'
         finally:
             conn.close()
+
     hot_concepts = concepts[:5] if concepts else []
     recent_concepts = get_recent_concepts(5, db_path)
+
     board_dist = {}
     if summary and summary.get('board_distribution'):
         try:
             board_dist = json.loads(summary['board_distribution'])
         except (json.JSONDecodeError, TypeError):
             pass
+
     max_boards = summary.get('max_continuous_boards', 0) if summary else 0
     limit_up_count = summary.get('limit_up_count', 0) if summary else 0
-    cycle_phase = _infer_cycle_phase(smash, summary, None)
+
+    # ==================== 统一使用 CycleModel 获取周期 ====================
+    try:
+        cycle_model = CycleModel(db_path)
+        phase_result = cycle_model.detect_phase(date)
+        cycle_phase = phase_result.get('phase', '')
+    except Exception as e:
+        logger.warning(f"CycleModel 调用失败，使用备用方法: {e}")
+        # 备用方法：基于砸盘系数和涨停数简单判断（仅用于降级）
+        if smash is not None:
+            if smash >= 7.0:
+                cycle_phase = '崩塌退潮期'
+            elif smash >= 4.5:
+                cycle_phase = '爆发高潮期'
+            elif smash >= 3.0:
+                cycle_phase = '蓄力爬升期'
+            elif smash >= 1.5:
+                cycle_phase = '蓄力爬升期'
+            else:
+                cycle_phase = '冰点酝酿期'
+        else:
+            lu = summary.get('limit_up_count', 50) if summary else 50
+            if lu >= 80:
+                cycle_phase = '爆发高潮期'
+            elif lu >= 60:
+                cycle_phase = '蓄力爬升期'
+            elif lu >= 40:
+                cycle_phase = '蓄力爬升期'
+            else:
+                cycle_phase = '冰点酝酿期'
+
+    # 市值偏好映射（仅4阶段）
     cap_pref = CYCLE_CAP_PREFERENCE.get(cycle_phase, 'medium')
+
     sentiment = 'neutral'
     if limit_up_count >= 70 and explosion_rate < 0.20:
         sentiment = 'bullish'
     elif limit_up_count < 40 or explosion_rate > 0.35:
         sentiment = 'bearish'
+
     result = {
         'date': date,
         'cycle_phase': cycle_phase,
@@ -576,7 +593,7 @@ def _score_cap_fit(stock: Dict, market_state: Dict) -> Tuple[float, str]:
         else:
             score += 10
             reason_parts.append(f"流通市值{flow_cap:.0f}亿(偏大)")
-    else:
+    else:  # large
         if flow_cap >= 100:
             score += 30
             reason_parts.append(f"流通市值{flow_cap:.0f}亿(大盘，适配当前周期)")
@@ -673,9 +690,9 @@ def score_stock(stock: Dict, market_state: Dict,
 def _suggest_action(score: float, stock: Dict, market_state: Dict) -> str:
     boards = stock.get('limit_up_days', 1) or 1
     is_broken = stock.get('_from_break_pool', False)
-    phase = market_state.get('cycle_phase', '发酵期')
+    phase = market_state.get('cycle_phase', '蓄力爬升期')
     if score >= 80:
-        if boards >= 3 and phase in ('主升期', '高潮期'):
+        if boards >= 3 and phase == '爆发高潮期':
             return '追涨(龙头确认)'
         return '打板(强势股)'
     elif score >= 65:
@@ -692,14 +709,14 @@ def _generate_risks(stock: Dict, market_state: Dict, score: float) -> List[str]:
     boards = stock.get('limit_up_days', 1) or 1
     break_times = stock.get('break_times', 0) or 0
     explosion_rate = market_state.get('explosion_rate', 0)
-    phase = market_state.get('cycle_phase', '发酵期')
+    phase = market_state.get('cycle_phase', '蓄力爬升期')
     if boards >= 5:
         risks.append(f"已{boards}连板，高位风险较大，注意控制仓位")
     if break_times >= 3:
         risks.append(f"今日开板{break_times}次，封板稳定性存疑")
     if explosion_rate > 0.30:
         risks.append(f"当前炸板率{explosion_rate:.0%}，整体封板成功率偏低")
-    if phase in ('崩塌期', '高潮期'):
+    if phase in ('崩塌退潮期', '爆发高潮期'):
         risks.append(f"当前处于{phase}，注意周期转换风险")
     if score < 60:
         risks.append("综合评分偏低，建议降低仓位或等待更优机会")
@@ -711,14 +728,14 @@ def estimate_win_rate(stock_score: Dict, market_state: Dict,
                       db_path: str = DB_PATH) -> float:
     score = stock_score['total_score']
     boards = stock_score.get('limit_up_days', 1)
-    phase = market_state.get('cycle_phase', '发酵期')
+    phase = market_state.get('cycle_phase', '蓄力爬升期')
     base_rate = 0.40
     base_rate += (score - 50) * 0.005
     promo = get_historical_promotion_rate(boards, db_path)
     base_rate = base_rate * 0.6 + promo * 0.4
-    if phase in ('主升期', '发酵期'):
+    if phase in ('爆发高潮期', '蓄力爬升期'):
         base_rate *= 1.1
-    elif phase in ('崩塌期',):
+    elif phase in ('崩塌退潮期',):
         base_rate *= 0.8
     return round(max(0.15, min(base_rate, 0.85)), 2)
 
@@ -910,11 +927,11 @@ def recommend_for_next_day(date: str, db_path: str = DB_PATH) -> Dict[str, Any]:
     sentiment = market_state['sentiment']
     explosion_rate = market_state['explosion_rate']
     max_boards = market_state['max_boards']
-    if phase in ('主升期', '高潮期'):
+    if phase in ('爆发高潮期',):
         target_height = f"{max_boards}~{max_boards+1}板"
-    elif phase in ('发酵期',):
+    elif phase in ('蓄力爬升期',):
         target_height = f"{max(2, max_boards-1)}~{max_boards}板"
-    else:
+    else:  # 冰点酝酿期 / 崩塌退潮期
         target_height = "首板~2板为主"
     focus = market_state['hot_concepts_top5'][:3]
     risk_parts = []
@@ -928,18 +945,16 @@ def recommend_for_next_day(date: str, db_path: str = DB_PATH) -> Dict[str, Any]:
         risk_parts.append(f"砸盘系数{market_state['smash_coefficient']:.1f}偏高，注意高位股抛压")
     if sentiment == 'bearish':
         risk_parts.append("情绪偏空，严格止损(-3%~-5%)")
-    if phase in ('冰点期',):
+    if phase in ('冰点酝酿期',):
         strategy = "冰点期防守为主，轻仓试错首板，重点观察是否有新题材破冰"
-    elif phase in ('蓄力期',):
+    elif phase in ('蓄力爬升期',):
         strategy = "蓄力期可逐步加仓，关注2板确认股，等待主线明确"
-    elif phase in ('发酵期',):
-        strategy = "发酵期积极参与主线龙头，关注3板以上确认标的"
-    elif phase in ('主升期',):
-        strategy = "主升期重仓龙头，敢于追高，注意龙头分歧日风险"
-    elif phase in ('高潮期',):
+    elif phase in ('爆发高潮期',):
         strategy = "高潮期享受利润但提高警惕，关注龙头断板信号，准备撤退"
-    else:
+    elif phase in ('崩塌退潮期',):
         strategy = "崩塌期空仓或极轻仓观望，等待新的冰点机会"
+    else:
+        strategy = "市场周期未明确，建议观望"
     top_picks = generate_recommendations(date, top_n=3, db_path=db_path)
     return {
         'date': date,

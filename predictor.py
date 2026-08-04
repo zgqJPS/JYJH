@@ -3,6 +3,7 @@ predictor.py - 预测引擎 (v2.0 升级版)
 基于当前市场状态、历史数据和知识库，生成多维度预测。
 每个预测附带置信度。砸盘系数作为核心预测因子，权重最高。
 统一使用 xgt_limit_up_detail 表的字段：limit_up_days, seal_ratio
+市场周期参考 CycleModel 的4阶段作为额外证据
 """
 import logging
 import math
@@ -21,6 +22,7 @@ class SentimentStateEngine:
     基于多维观测的市场情绪周期状态识别引擎。
     将市场划分为5个隐藏状态：冰点、蓄力、发酵、高潮、崩塌
     利用砸盘系数趋势、炸板率、涨停数量等观测变量推断当前状态。
+    同时参考 CycleModel 的结果作为额外证据。
     """
 
     STATES = ['ICEPOINT', 'STARTUP', 'MAIN_RISE', 'CLIMAX', 'EBB']
@@ -43,6 +45,8 @@ class SentimentStateEngine:
     def __init__(self, db):
         self.db = db
         self._history_cache = {}
+        # 获取数据库路径
+        self.db_path = getattr(db, 'db_path', None)
 
     def get_recent_smash_data(self, date_str, days=30):
         """获取最近N天的砸盘系数数据"""
@@ -128,6 +132,20 @@ class SentimentStateEngine:
         return result
 
     def infer_state(self, date_str):
+        """
+        推断市场情绪状态 - 结合 CycleModel 结果作为额外证据
+        """
+        # 先获取 CycleModel 的结果
+        cycle_phase = ''
+        try:
+            from cycle_model import CycleModel
+            cycle_model = CycleModel(self.db_path)
+            phase_result = cycle_model.detect_phase(date_str)
+            cycle_phase = phase_result.get('phase', '')
+        except Exception as e:
+            logger.warning(f"CycleModel 调用失败: {e}")
+
+        # 原有逻辑
         smash_data = self.get_recent_smash_data(date_str, days=10)
         daily_data = self.get_recent_daily_data(date_str, days=10)
 
@@ -239,26 +257,20 @@ class SentimentStateEngine:
                     scores['ICEPOINT'] += 1.5
                     evidence.append(f"最高{current_max}板→冰点信号(高度压缩)")
 
-        try:
-            rows = self.db.conn.execute(
-                "SELECT cycle_phase FROM cycle_context WHERE date <= ? ORDER BY date DESC LIMIT 1",
-                (date_str,)
-            ).fetchall()
-            if rows and rows[0]['cycle_phase']:
-                phase = rows[0]['cycle_phase']
-                phase_map = {
-                    '冰点期': 'ICEPOINT', '轮动/低迷期': 'ICEPOINT',
-                    '蓄力期': 'STARTUP', '发酵期': 'MAIN_RISE',
-                    '主升期': 'MAIN_RISE', '补涨期': 'MAIN_RISE',
-                    '高潮期': 'CLIMAX', '崩塌期': 'EBB', '退潮期': 'EBB',
-                }
-                mapped_state = phase_map.get(phase, '')
-                if mapped_state:
-                    scores[mapped_state] += 2.5
-                    evidence.append(f"周期表记录为{phase}→{self.STATE_CN.get(mapped_state, mapped_state)}")
-        except Exception:
-            pass
+        # ============ CycleModel 结果作为额外证据（仅使用新4阶段） ============
+        if cycle_phase:
+            phase_map = {
+                '冰点酝酿期': 'ICEPOINT',
+                '蓄力爬升期': 'STARTUP',
+                '爆发高潮期': 'CLIMAX',
+                '崩塌退潮期': 'EBB',
+            }
+            mapped = phase_map.get(cycle_phase, '')
+            if mapped:
+                scores[mapped] += 2.0
+                evidence.append(f"CycleModel 判断为 {cycle_phase} → 映射到 {mapped}")
 
+        # 最终打分选择
         total_score = sum(scores.values())
         if total_score > 0:
             probabilities = {s: round(v / total_score, 3) for s, v in scores.items()}
