@@ -21,8 +21,6 @@ class Database:
     def _connect(self):
         """建立数据库连接"""
         try:
-            # 使用 isolation_level=None 关闭Python的隐式事务管理
-            # 这样每条SQL（包括CREATE TABLE）都会立即生效，无需手动commit
             self.conn = sqlite3.connect(self.db_path, isolation_level=None)
             self.conn.row_factory = sqlite3.Row
             logger.info(f"数据库连接成功: {self.db_path}")
@@ -173,7 +171,7 @@ class Database:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
 
-            # 选股宝涨停详情表（存储从选股宝获取的概念和涨停原因数据）
+            # 选股宝涨停详情表
             """CREATE TABLE IF NOT EXISTS xgb_limit_up_detail (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
@@ -185,7 +183,7 @@ class Database:
                 UNIQUE(date, code)
             )""",
 
-            # 概念统计表（汇总每日各概念的涨停数量）
+            # 概念统计表
             """CREATE TABLE IF NOT EXISTS concept_statistics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
@@ -194,7 +192,7 @@ class Database:
                 UNIQUE(date, concept)
             )""",
 
-            # 砸盘系数结果表（核心主导指标）
+            # 砸盘系数结果表（旧，保留兼容）
             """CREATE TABLE IF NOT EXISTS smash_coefficient_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
@@ -202,9 +200,17 @@ class Database:
                 max_continuous_boards INTEGER,
                 UNIQUE(date)
             )""",
+
+            # ===== 新增：砸盘系数主表（统一数据源） =====
+            """CREATE TABLE IF NOT EXISTS smash_coefficients (
+                trade_date TEXT PRIMARY KEY,
+                smash_coefficient REAL,
+                limit_up_count INTEGER,
+                max_continuous_days INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
         ]
 
-        # 直接使用cursor建表，绕过execute()方法，确保DDL事务正确提交
         cursor = self.conn.cursor()
         success_count = 0
         for sql in tables:
@@ -222,7 +228,8 @@ class Database:
         required = ['akshare_limit_up', 'prediction_records', 'model_weights',
                      'market_knowledge', 'correction_log', 'daily_snapshot',
                      'backtest_records', 'xgb_limit_up_detail',
-                     'concept_statistics', 'smash_coefficient_results']
+                     'concept_statistics', 'smash_coefficient_results',
+                     'smash_coefficients']  # 新增
         missing = [t for t in required if t not in existing]
         if missing:
             logger.error(f"⚠️ 以下表创建后仍不存在: {missing}")
@@ -296,15 +303,15 @@ class Database:
     def init_default_weights(self):
         """初始化默认权重"""
         default_factors = {
-            "momentum_factor": 0.5,        # 动量因子
-            "continuation_factor": 0.5,     # 晋级率因子
-            "concept_heat_factor": 0.5,     # 概念热度因子
-            "seal_quality_factor": 0.5,     # 封板质量因子
-            "cycle_factor": 0.5,           # 周期因子
-            "dragon_factor": 0.5,          # 龙头因子
-            "volume_factor": 0.5,          # 量能因子
-            "breadth_factor": 0.5,         # 宽度因子
-            "smash_factor": 0.7,           # 砸盘系数因子（初始权重最高，核心主导）
+            "momentum_factor": 0.5,
+            "continuation_factor": 0.5,
+            "concept_heat_factor": 0.5,
+            "seal_quality_factor": 0.5,
+            "cycle_factor": 0.5,
+            "dragon_factor": 0.5,
+            "volume_factor": 0.5,
+            "breadth_factor": 0.5,
+            "smash_factor": 0.7,
         }
         for name, weight in default_factors.items():
             existing = self.get_weight(name)
@@ -379,7 +386,7 @@ class Database:
         params.append(limit)
         return self.fetch_all(sql, params)
 
-    # ============ 涨停数据查询（原有数据） ============
+    # ============ 涨停数据查询 ============
     def get_limit_up_data(self, date):
         """获取某日涨停数据"""
         return self.fetch_all(
@@ -402,7 +409,7 @@ class Database:
             "SELECT * FROM cycle_context WHERE date = ?", (date,))
 
     def get_limit_up_with_concepts(self, date):
-        """获取含概念的涨停数据（从选股宝详情表JOIN）"""
+        """获取含概念的涨停数据"""
         return self.fetch_all(
             """SELECT l.*, x.concept, x.reason 
                FROM akshare_limit_up l
@@ -411,10 +418,7 @@ class Database:
 
     # ============ 选股宝涨停详情操作 ============
     def save_xgb_detail(self, records, date):
-        """
-        批量保存选股宝涨停详情数据
-        records: 字典列表，每个包含 code, name, concept, reason
-        """
+        """批量保存选股宝涨停详情数据"""
         count = 0
         for r in records:
             try:
@@ -437,10 +441,7 @@ class Database:
             "SELECT * FROM xgb_limit_up_detail WHERE date = ?", (date,))
 
     def get_xgb_concepts_by_date(self, date):
-        """
-        从xgb_limit_up_detail表聚合概念统计
-        将每只股票的概念字段（分号分隔）展开并统计
-        """
+        """从xgb_limit_up_detail表聚合概念统计"""
         rows = self.fetch_all(
             "SELECT concept FROM xgb_limit_up_detail WHERE date = ? AND concept IS NOT NULL AND concept != ''",
             (date,))
@@ -461,10 +462,7 @@ class Database:
             "SELECT * FROM concept_statistics WHERE date = ? ORDER BY count DESC", (date,))
 
     def save_concept_statistics(self, records, date):
-        """
-        保存概念统计数据到concept_statistics表
-        records: 字典列表，每个包含 concept, count
-        """
+        """保存概念统计数据"""
         count = 0
         for r in records:
             try:
@@ -482,30 +480,54 @@ class Database:
 
     # ============ 砸盘系数操作 ============
     def save_smash_coefficient(self, date, coefficient, max_boards):
-        """保存砸盘系数结果"""
-        sql = """INSERT OR REPLACE INTO smash_coefficient_results 
-                 (date, smash_coefficient, max_continuous_boards)
-                 VALUES (?, ?, ?)"""
-        self.execute(sql, (date, coefficient, max_boards))
+        """
+        保存砸盘系数结果（写入统一表 smash_coefficients）
+        同时保留旧表写入以便兼容，但走势图从新表读取
+        """
+        # 写入新表
+        self.execute(
+            """INSERT OR REPLACE INTO smash_coefficients 
+               (trade_date, smash_coefficient, max_continuous_days)
+               VALUES (?, ?, ?)""",
+            (date, coefficient, max_boards))
+        # 同时写入旧表（兼容）
+        self.execute(
+            """INSERT OR REPLACE INTO smash_coefficient_results 
+               (date, smash_coefficient, max_continuous_boards)
+               VALUES (?, ?, ?)""",
+            (date, coefficient, max_boards))
 
     def get_smash_coefficient(self, date):
-        """获取单日砸盘系数"""
+        """获取单日砸盘系数（优先从新表读取）"""
+        row = self.fetch_one(
+            "SELECT smash_coefficient FROM smash_coefficients WHERE trade_date = ?", (date,))
+        if row:
+            return {"smash_coefficient": row["smash_coefficient"]}
+        # 降级到旧表
         return self.fetch_one(
             "SELECT * FROM smash_coefficient_results WHERE date = ?", (date,))
 
     def get_smash_coefficient_history(self, start_date=None, end_date=None, limit=30):
-        """获取砸盘系数历史数据"""
-        sql = "SELECT * FROM smash_coefficient_results"
+        """
+        获取砸盘系数历史数据（从统一表 smash_coefficients 读取）
+        返回字段：date, smash_coefficient, max_continuous_boards
+        """
+        sql = """
+            SELECT trade_date as date, 
+                   smash_coefficient, 
+                   max_continuous_days as max_continuous_boards
+            FROM smash_coefficients
+        """
         conditions = []
         params = []
         if start_date:
-            conditions.append("date >= ?")
+            conditions.append("trade_date >= ?")
             params.append(start_date)
         if end_date:
-            conditions.append("date <= ?")
+            conditions.append("trade_date <= ?")
             params.append(end_date)
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
-        sql += " ORDER BY date DESC LIMIT ?"
+        sql += " ORDER BY trade_date DESC LIMIT ?"
         params.append(limit)
         return self.fetch_all(sql, params)
