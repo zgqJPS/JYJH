@@ -24,6 +24,8 @@ sys.path.insert(0, PROJECT_DIR)
 from config import DB_PATH, KNOWLEDGE_DIR
 from db import Database
 from main import run_fetch
+from smash_coefficient import SmashCoefficientCalculator
+from market_analyzer import MarketAnalyzer
 
 # ============ Server酱微信通知 ============
 class ServerChanNotifier:
@@ -46,7 +48,7 @@ class ServerChanNotifier:
             return False
 
 # 从环境变量读取 SCKEY，未配置则禁用
-SERVER_CHAN_SCKEY = os.environ.get("SERVER_CHAN_SCKEY", "SCT302469TzkdqbtA9rEWoHctOuDgRg9K3")
+SERVER_CHAN_SCKEY = os.environ.get("SERVER_CHAN_SCKEY", "")
 if not SERVER_CHAN_SCKEY:
     logging.warning("未设置 SERVER_CHAN_SCKEY，微信通知禁用")
     notifier = None
@@ -187,6 +189,77 @@ def _determine_analysis_date(preferred_date=None):
     return data_date, target_date
 
 
+def update_daily_summary(db, date_str):
+    """
+    计算并更新指定日期的每日汇总数据（xgt_daily_summary表）
+    需要 xgt_limit_up_detail 和 xgt_break_limit_up 表中有数据
+    """
+    logger_local = logging.getLogger(__name__)
+    try:
+        # 获取涨停数
+        limit_up_rows = db.fetch_all("SELECT code FROM xgt_limit_up_detail WHERE date = ?", (date_str,))
+        limit_up_count = len(limit_up_rows)
+
+        # 获取炸板数
+        break_rows = db.fetch_all("SELECT code FROM xgt_break_limit_up WHERE date = ?", (date_str,))
+        break_count = len(break_rows)
+
+        # 获取跌停数（如果有表）
+        try:
+            down_rows = db.fetch_all("SELECT code FROM xgt_limit_down WHERE date = ?", (date_str,))
+            limit_down_count = len(down_rows)
+        except:
+            limit_down_count = 0
+
+        # 计算炸板率
+        total = limit_up_count + break_count
+        explosion_rate = break_count / total if total > 0 else 0.0
+
+        # 获取最高连板
+        max_boards_row = db.fetch_one(
+            "SELECT MAX(limit_up_days) as max_boards FROM xgt_limit_up_detail WHERE date = ?",
+            (date_str,)
+        )
+        max_boards = max_boards_row[0] if max_boards_row else 0
+
+        # 获取连板分布
+        board_rows = db.fetch_all(
+            "SELECT limit_up_days, COUNT(*) as cnt FROM xgt_limit_up_detail WHERE date = ? GROUP BY limit_up_days",
+            (date_str,)
+        )
+        board_dist = {row[0]: row[1] for row in board_rows}
+
+        # 获取涨跌家数（如果有数据，暂不强制）
+        rise_count = 0
+        fall_count = 0
+
+        # 插入或更新汇总
+        db.execute("""
+            INSERT OR REPLACE INTO xgt_daily_summary
+            (date, limit_up_count, limit_down_count, break_limit_up_count,
+             rise_count, fall_count, explosion_rate, rise_fall_ratio,
+             market_heat, max_continuous_boards, board_distribution)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            date_str,
+            limit_up_count,
+            limit_down_count,
+            break_count,
+            rise_count,
+            fall_count,
+            explosion_rate,
+            1.0,  # rise_fall_ratio 默认
+            0,    # market_heat 默认
+            max_boards,
+            json.dumps(board_dist)
+        ))
+        logger_local.info(f"每日汇总已更新: {date_str} 涨停{limit_up_count} 炸板{break_count} 炸板率{explosion_rate:.1%}")
+        return True
+    except Exception as e:
+        logger_local.error(f"更新每日汇总失败 ({date_str}): {e}", exc_info=True)
+        return False
+
+
 def run_task(task_id, task_type, params=None):
     with tasks_lock:
         tasks[task_id] = {
@@ -238,12 +311,32 @@ def _run_fetch_task(task_id, params):
             tasks[task_id]["result"] = {"fetched_count": 0}
             return
 
+    # ---- 数据后处理：更新每日汇总 + 计算砸盘系数 ----
+    data_date, target_date = _determine_analysis_date(date_str)
+    if data_date:
+        try:
+            db = Database(DB_PATH)
+            db.init_new_tables()  # 确保表存在
+            # 1. 更新每日汇总
+            update_daily_summary(db, data_date)
+            # 2. 计算并保存砸盘系数
+            calc = SmashCoefficientCalculator(db)
+            coef, max_boards = calc.calculate_daily(data_date)
+            if coef is not None:
+                logger.info(f"砸盘系数计算完成: {data_date} = {coef}, 最高板={max_boards}")
+            db.close()
+        except Exception as e:
+            logger.error(f"数据后处理失败: {e}", exc_info=True)
+    # ------------------------------------------------
+
+    # 继续原有推荐逻辑（如果模块已加载）
     if result and result > 0 and _smart_recommender:
         try:
             with tasks_lock:
                 tasks[task_id]["message"] = "数据获取成功，正在生成明日预测..."
                 tasks[task_id]["progress"] = 75
-            data_date, target_date = _determine_analysis_date(date_str)
+            if not data_date:
+                data_date, target_date = _determine_analysis_date(date_str)
             if data_date:
                 if _live_tracker:
                     try:
@@ -672,6 +765,22 @@ def handle_dashboard():
             if analysis:
                 smash_info = analysis.get("smash_analysis", {})
                 basic = analysis.get("basic_stats", {})
+                # 获取 board_distribution（优先从 xgt_daily_summary）
+                board_dist = {}
+                try:
+                    row = db.fetch_one("SELECT board_distribution FROM xgt_daily_summary WHERE date = ?", (latest_date,))
+                    if row and row[0]:
+                        board_dist = json.loads(row[0])
+                except:
+                    pass
+                if not board_dist:
+                    # 降级：从 analysis 的 board_tiers 构建简单计数
+                    tiers = analysis.get("board_tiers", {})
+                    for tier, data in tiers.items():
+                        if isinstance(data, dict) and "count" in data:
+                            board_dist[tier] = data["count"]
+                        elif isinstance(data, (list, dict)):
+                            board_dist[tier] = len(data) if isinstance(data, list) else data.get("count", 0)
                 analysis_summary = {
                     "date": latest_date,
                     "limit_up_count": basic.get("total_count", latest.get("limit_up_count", 0)),
@@ -685,7 +794,8 @@ def handle_dashboard():
                     "smash_trade_advice": smash_info.get("trade_advice", ""),
                     "smash_trend": smash_info.get("trend", ""),
                     "smash_advantage": smash_info.get("advantage", ""),
-                    "board_tiers": analysis.get("board_tiers", {}),
+                    "board_tiers": analysis.get("board_tiers", {}),      # 保留原始详细数据
+                    "board_distribution": board_dist,                    # 新增简洁计数
                     "seal_quality": analysis.get("seal_quality", {}),
                     "concept_heat": analysis.get("concept_heat", {}),
                 }
