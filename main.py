@@ -26,7 +26,10 @@ from knowledge_base import KnowledgeBase
 from reporter import Reporter
 from smash_coefficient import SmashCoefficientCalculator
 from cycle_model import CycleModel
-from realtime_fetcher import fetch_realtime_today, save_realtime_to_db  # 新增导入
+from realtime_fetcher import fetch_realtime_today, save_realtime_to_db
+
+# 模块级日志记录器（在 setup_logging 之后才会配置格式，但 getLogger 可在任何地方调用）
+_logger = logging.getLogger(__name__)
 
 
 def setup_logging():
@@ -42,6 +45,7 @@ def update_daily_summary(db, date_str):
     计算并更新指定日期的每日汇总数据（xgt_daily_summary表）
     需要 xgt_limit_up_detail 和 xgt_break_limit_up 表中有数据
     """
+    logger = logging.getLogger(__name__)  # 获取当前模块的 logger
     try:
         # 获取涨停数
         limit_up_rows = db.fetch_all("SELECT code FROM xgt_limit_up_detail WHERE date = ?", (date_str,))
@@ -122,9 +126,8 @@ def run_daily(db=None):
         close_db = True
 
     try:
-        # Step -1: 获取数据（改用 run_fetch 以确保 xgt_limit_up_detail 有数据）
+        # Step -1: 获取数据（使用 run_fetch 以确保 xgt_limit_up_detail 有数据）
         logger.info("Step -1: 检查并获取最新数据...")
-        from main import run_fetch  # 避免循环导入，但 run_fetch 在本文件内，直接调用即可
         today_str = datetime.now().strftime("%Y-%m-%d")
 
         # 尝试获取当天数据
@@ -147,7 +150,7 @@ def run_daily(db=None):
         target_date = all_dates[-1]
         logger.info(f"分析日期: {target_date}")
 
-        # ---- 新增：确保每日汇总和砸盘系数正确计算 ----
+        # ---- 确保每日汇总和砸盘系数正确计算 ----
         # 更新每日汇总
         update_daily_summary(db, target_date)
         # 计算砸盘系数（覆盖之前可能存在的错误值）
