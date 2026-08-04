@@ -2,15 +2,13 @@
 realtime_fetcher.py - 从选股通盯盘页直接获取当天实时数据
 用于获取当天最新数据，比API更及时
 """
+
 import requests
 import json
 import time
 import logging
-import sqlite3
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-
-from config import DATA_FILTER_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -32,44 +30,13 @@ HEADERS = {
     'Connection': 'keep-alive',
 }
 
-# 主板代码前缀
-MAIN_BOARD_PREFIXES = DATA_FILTER_CONFIG.get("main_board_prefixes", ("60", "00"))
-EXCLUDED_PREFIXES = DATA_FILTER_CONFIG.get("excluded_prefixes", ("30", "68", "8", "400", "420", "430", "830"))
-ST_KEYWORDS = DATA_FILTER_CONFIG.get("st_keywords", ("ST", "*ST"))
-
-
-def is_main_board_stock(code: str, name: str) -> bool:
-    """判断是否为主板股票"""
-    if not code or not name:
-        return False
-    code_str = str(code).strip()
-    name_str = str(name).strip()
-
-    for kw in ST_KEYWORDS:
-        if kw in name_str:
-            return False
-
-    if code_str.startswith(MAIN_BOARD_PREFIXES):
-        for prefix in EXCLUDED_PREFIXES:
-            if code_str.startswith(prefix):
-                return False
-        return True
-    return False
-
-
-def filter_stock_list(stocks: List[Dict]) -> List[Dict]:
-    """过滤股票列表，只保留主板股票"""
-    if not stocks:
-        return stocks
-    return [s for s in stocks if is_main_board_stock(s.get('code', ''), s.get('name', ''))]
-
 
 def fetch_realtime_today() -> Dict[str, Any]:
     """获取当天实时数据"""
     logger.info("=" * 60)
     logger.info("开始获取当天实时数据（盯盘页模式）")
     logger.info("=" * 60)
-
+    
     result = {
         'pools': {},
         'market_indicators': {},
@@ -77,21 +44,20 @@ def fetch_realtime_today() -> Dict[str, Any]:
         'fetch_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'source': 'realtime_dingpan'
     }
-
+    
     # 1. 获取各股票池数据
     for pool_name, url in DINGPAN_URLS.items():
         if pool_name == 'market_indicator':
             continue
         try:
             data = _fetch_pool_realtime(url, pool_name)
-            filtered_data = filter_stock_list(data)
-            result['pools'][pool_name] = filtered_data
-            logger.info(f"[盯盘] {pool_name}: 原始{len(data)}只, 过滤后{len(filtered_data)}只")
+            result['pools'][pool_name] = data
+            logger.info(f"[盯盘] {pool_name}: {len(data)} 只")
             time.sleep(0.3)
         except Exception as e:
             logger.error(f"[盯盘] 获取{pool_name}失败: {e}")
             result['pools'][pool_name] = []
-
+    
     # 2. 获取市场指标
     try:
         indicators = _fetch_market_indicators_realtime()
@@ -99,7 +65,7 @@ def fetch_realtime_today() -> Dict[str, Any]:
         logger.info(f"[盯盘] 市场指标: {indicators}")
     except Exception as e:
         logger.error(f"[盯盘] 获取市场指标失败: {e}")
-
+    
     # 3. 推断真实日期
     limit_up_data = result['pools'].get('limit_up', [])
     if limit_up_data:
@@ -108,13 +74,13 @@ def fetch_realtime_today() -> Dict[str, Any]:
         if data_date:
             result['date'] = data_date
             logger.info(f"[盯盘] 数据实际日期: {data_date}")
-
+    
     logger.info("=" * 60)
     logger.info(f"实时数据获取完成，日期: {result['date']}")
     logger.info(f"涨停: {len(result['pools'].get('limit_up', []))}只")
     logger.info(f"炸板: {len(result['pools'].get('limit_up_broken', []))}只")
     logger.info("=" * 60)
-
+    
     return result
 
 
@@ -180,14 +146,14 @@ def _parse_stock_item(item: Dict, pool_name: str) -> Optional[Dict]:
     try:
         symbol = item.get('symbol', '')
         code = symbol.split('.')[0] if '.' in symbol else symbol
-
+        
         concept = ''
         surge_reason = item.get('surge_reason', {})
         if surge_reason and isinstance(surge_reason, dict):
             plates = surge_reason.get('related_plates', [])
             if plates and len(plates) > 0:
                 concept = plates[0].get('plate_name', '')
-
+        
         first_limit_up_ts = item.get('first_limit_up', 0)
         first_limit_up_time = ''
         if first_limit_up_ts:
@@ -196,15 +162,15 @@ def _parse_stock_item(item: Dict, pool_name: str) -> Optional[Dict]:
                 first_limit_up_time = dt.strftime('%H:%M:%S')
             except:
                 pass
-
+        
         stock = {
             'code': code,
             'name': item.get('stock_chi_name', ''),
             'change_percent': item.get('change_percent', 0) or 0,
             'latest_price': item.get('price', 0) or 0,
             'turnover_rate': item.get('turnover_ratio', 0) or 0,
-            'seal_amount': item.get('buy_lock_volume_ratio', 0) or 0,
-            'seal_ratio': item.get('buy_lock_volume_ratio', 0) or 0,
+            'seal_amount': item.get('buy_lock_volume_ratio', 0) or 0,  # 选股宝返回的是比例0~1
+            'seal_ratio': item.get('buy_lock_volume_ratio', 0) or 0,    # 直接使用
             'limit_up_days': item.get('limit_up_days', 1) or 1,
             'first_limit_up_time': first_limit_up_time,
             'open_times': item.get('break_limit_up_times', 0) or 0,
@@ -215,12 +181,12 @@ def _parse_stock_item(item: Dict, pool_name: str) -> Optional[Dict]:
             'trade_date': '',
             '_pool': pool_name,
         }
-
+        
         if not stock['code'] or stock['code'] in ('', 'None'):
             return None
-
-        for key in ['change_percent', 'latest_price', 'turnover_rate', 'seal_amount',
-                    'seal_ratio', 'flow_capital', 'volume_ratio']:
+        
+        # 确保数值类型
+        for key in ['change_percent', 'latest_price', 'turnover_rate', 'seal_amount', 'seal_ratio', 'flow_capital', 'volume_ratio']:
             if stock[key] is None:
                 stock[key] = 0
             else:
@@ -228,10 +194,11 @@ def _parse_stock_item(item: Dict, pool_name: str) -> Optional[Dict]:
                     stock[key] = float(stock[key])
                 except (ValueError, TypeError):
                     stock[key] = 0
-
+        
+        # 流通市值转为亿元
         if stock['flow_capital'] > 1e8:
             stock['flow_capital'] = stock['flow_capital'] / 1e8
-
+        
         if stock['limit_up_days'] is None:
             stock['limit_up_days'] = 1
         else:
@@ -239,51 +206,25 @@ def _parse_stock_item(item: Dict, pool_name: str) -> Optional[Dict]:
                 stock['limit_up_days'] = int(stock['limit_up_days'])
             except (ValueError, TypeError):
                 stock['limit_up_days'] = 1
-
+        
         return stock
     except Exception as e:
         logger.debug(f"[盯盘] 解析股票数据失败: {e}")
         return None
 
 
-def _is_trading_day(date_str: str, db_path: str) -> bool:
-    """
-    检查某个日期是否为交易日（通过查询数据库是否有该日期的涨停记录）
-    """
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.execute("SELECT 1 FROM xgt_limit_up_detail WHERE date = ? LIMIT 1", (date_str,))
-        exists = cursor.fetchone() is not None
-        conn.close()
-        return exists
-    except Exception:
-        # 如果表不存在或查询失败，默认返回True（允许写入）
-        return True
-
-
 def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
     """
     将实时数据保存到数据库
-    仅当数据日期为今日或数据库中尚无该日期数据时才写入，避免非交易日污染
+    依赖 db.py 已创建好所有表
     """
+    import sqlite3
+    
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     saved_count = 0
     date = data['date']
-    today = datetime.now().strftime('%Y-%m-%d')
-
-    # ---- 新增交易日检查 ----
-    # 如果日期不是今天，并且数据库中已有该日期的数据，则跳过写入（避免非交易日重复或覆盖）
-    if date != today:
-        # 检查数据库中是否已有该日期的数据
-        if _is_trading_day(date, db_path):
-            logger.warning(f"[盯盘] 日期 {date} 已有数据，跳过写入（避免非交易日重复）")
-            conn.close()
-            return 0
-        else:
-            logger.info(f"[盯盘] 日期 {date} 无数据，作为新交易日写入")
-    # -----------------------
-
+    
     try:
         # 1. 保存涨停详情到 xgt_limit_up_detail
         limit_up_stocks = data['pools'].get('limit_up', [])
@@ -313,7 +254,7 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                 saved_count += 1
             except Exception as e:
                 logger.warning(f"保存涨停详情失败({stock.get('code', '')}): {e}")
-
+        
         # 2. 保存炸板池
         break_stocks = data['pools'].get('limit_up_broken', [])
         for stock in break_stocks:
@@ -332,7 +273,7 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                 saved_count += 1
             except Exception as e:
                 logger.warning(f"保存炸板数据失败({stock.get('code', '')}): {e}")
-
+        
         # 3. 保存跌停池
         limit_down_stocks = data['pools'].get('limit_down', [])
         for stock in limit_down_stocks:
@@ -349,7 +290,7 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                 saved_count += 1
             except Exception as e:
                 logger.warning(f"保存跌停数据失败({stock.get('code', '')}): {e}")
-
+        
         # 4. 概念统计
         concept_count = {}
         for stock in limit_up_stocks:
@@ -361,7 +302,7 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
             if concept and concept not in ('', 'None'):
                 key = f"{concept}(炸板)"
                 concept_count[key] = concept_count.get(key, 0) + 1
-
+        
         if concept_count:
             for concept, count in sorted(concept_count.items(), key=lambda x: x[1], reverse=True):
                 try:
@@ -373,7 +314,7 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                 except Exception as e:
                     logger.debug(f"保存概念统计失败({concept}): {e}")
             logger.info(f"[概念统计] {date}: 共{len(concept_count)}个概念, TOP3: {sorted(concept_count.items(), key=lambda x: x[1], reverse=True)[:3]}")
-
+        
         # 5. 每日汇总
         indicators = data.get('market_indicators', {})
         limit_up_count = len(limit_up_stocks)
@@ -383,14 +324,14 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
         rise_count = indicators.get('rise_count', 0) or 0
         fall_count = indicators.get('fall_count', 0) or 0
         rise_fall_ratio = rise_count / fall_count if fall_count > 0 else 1.0
-
+        
         board_dist = {}
         max_boards = 0
         for stock in limit_up_stocks:
             days = stock.get('limit_up_days', 1) or 1
             board_dist[days] = board_dist.get(days, 0) + 1
             max_boards = max(max_boards, days)
-
+        
         try:
             conn.execute("""
                 INSERT OR REPLACE INTO xgt_daily_summary
@@ -413,14 +354,14 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
             ))
         except Exception as e:
             logger.error(f"保存每日汇总失败: {e}")
-
-        # 6. 计算并保存砸盘系数（只写入统一表）
+        
+        # 6. 计算并保存砸盘系数（写入smash_coefficients）
         try:
             prev_row = conn.execute("""
                 SELECT date FROM xgt_limit_up_detail 
                 WHERE date < ? GROUP BY date ORDER BY date DESC LIMIT 1
             """, (date,)).fetchone()
-
+            
             if prev_row:
                 prev_date = prev_row['date'] if isinstance(prev_row, sqlite3.Row) else prev_row[0]
                 today_boards = {}
@@ -429,14 +370,14 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                     WHERE date = ? GROUP BY limit_up_days
                 """, (date,)).fetchall():
                     today_boards[r['limit_up_days']] = r['cnt']
-
+                
                 prev_boards = {}
                 for r in conn.execute("""
                     SELECT limit_up_days, COUNT(*) as cnt FROM xgt_limit_up_detail 
                     WHERE date = ? GROUP BY limit_up_days
                 """, (prev_date,)).fetchall():
                     prev_boards[r['limit_up_days']] = r['cnt']
-
+                
                 ratios = []
                 max_board = max(today_boards.keys()) if today_boards else 0
                 for n in range(2, max_board + 1):
@@ -444,14 +385,14 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                     prev_n1 = prev_boards.get(n - 1, 0)
                     if prev_n1 > 0 and today_n > 0:
                         ratios.append(today_n / prev_n1)
-
+                
                 if ratios:
                     smash_coeff = round(sum(ratios) / len(ratios) * 10, 2)
                     conn.execute("""
                         INSERT OR REPLACE INTO smash_coefficients 
-                        (trade_date, smash_coefficient, max_continuous_days)
-                        VALUES (?, ?, ?)
-                    """, (date, smash_coeff, max_boards))
+                        (trade_date, smash_coefficient, limit_up_count, max_continuous_days)
+                        VALUES (?, ?, ?, ?)
+                    """, (date, smash_coeff, limit_up_count, max_boards))
                     logger.info(f"[砸盘系数] {date}: {smash_coeff} (基于{len(ratios)}个晋升比率, 前日{prev_date})")
                 else:
                     logger.info(f"[砸盘系数] {date}: 无有效晋升比率，跳过计算")
@@ -459,16 +400,16 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                 logger.info(f"[砸盘系数] {date}: 无前日数据，跳过计算")
         except Exception as e:
             logger.warning(f"[砸盘系数] 计算失败(不影响其他数据): {e}")
-
+        
         conn.commit()
         logger.info(f"[盯盘] 数据已保存到数据库，共{saved_count}条记录")
-
+        
     except Exception as e:
         logger.error(f"[盯盘] 保存数据异常: {e}")
         conn.rollback()
     finally:
         conn.close()
-
+    
     return saved_count
 
 

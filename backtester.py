@@ -2,6 +2,7 @@
 backtester.py - 策略回测引擎
 用67天历史数据验证5个高价值信号的准确性
 同时支持自定义策略回测
+统一使用 xgt_limit_up_detail 和 smash_coefficients 表
 """
 
 import sqlite3
@@ -9,7 +10,7 @@ import json
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-DB_PATH = "/app/data/所有对话/主对话/stock_data_1784791326780_0_09ym.db"
+from config import DB_PATH
 
 
 class DataStore:
@@ -21,28 +22,26 @@ class DataStore:
         self._load_all()
     
     def _load_all(self):
-        """加载所有数据到内存"""
-        # 加载每日涨停数据
+        """加载所有数据到内存（使用 xgt 表）"""
         rows = self.conn.execute("""
-            SELECT date, code, name, continuous_boards, seal_amount, seal_style,
-                   turnover_rate, latest_price, change_percent, limit_up_time, market_cap
-            FROM akshare_limit_up
+            SELECT date, code, name, limit_up_days as continuous_boards, 
+                   seal_ratio as seal_amount, break_times as seal_style, 
+                   turnover_rate, price as latest_price, change_percent
+            FROM xgt_limit_up_detail
             WHERE date >= '2026-01-21' AND date <= '2026-05-11'
-            ORDER BY date, continuous_boards DESC
+            ORDER BY date, limit_up_days DESC
         """).fetchall()
-        
-        # 按日期组织
         self.daily_stocks = defaultdict(list)
-        self.stock_daily = defaultdict(dict)  # {(code, date): row_dict}
+        self.stock_daily = defaultdict(dict)
         for r in rows:
             d = dict(r)
             self.daily_stocks[d['date']].append(d)
             self.stock_daily[(d['code'], d['date'])] = d
         
-        # 加载砸盘系数
         rows = self.conn.execute("""
-            SELECT date, smash_coefficient, max_continuous_boards
-            FROM smash_coefficient_results
+            SELECT trade_date as date, smash_coefficient, 
+                   max_continuous_days as max_continuous_boards
+            FROM smash_coefficients
             WHERE date >= '2026-01-21' AND date <= '2026-05-11'
             ORDER BY date
         """).fetchall()
@@ -51,7 +50,6 @@ class DataStore:
             d = dict(r)
             self.daily_smash[d['date']] = d
         
-        # 加载概念统计
         rows = self.conn.execute("""
             SELECT date, concept, count
             FROM concept_statistics
@@ -63,51 +61,40 @@ class DataStore:
             d = dict(r)
             self.daily_concepts[d['date']].append(d)
         
-        # 排序后的交易日列表
         self.trading_days = sorted(set(
             list(self.daily_stocks.keys()) + list(self.daily_smash.keys())
         ))
-        # 过滤出有涨停数据的交易日
         self.trading_days_with_stocks = sorted(self.daily_stocks.keys())
-        
         self.conn.close()
     
     def get_date_index(self, date_str):
-        """获取日期在交易日列表中的索引"""
         try:
             return self.trading_days_with_stocks.index(date_str)
         except ValueError:
             return -1
     
     def get_prev_date(self, date_str):
-        """获取前一个交易日"""
         idx = self.get_date_index(date_str)
         if idx > 0:
             return self.trading_days_with_stocks[idx - 1]
         return None
     
     def get_next_date(self, date_str):
-        """获取后一个交易日"""
         idx = self.get_date_index(date_str)
         if idx >= 0 and idx < len(self.trading_days_with_stocks) - 1:
             return self.trading_days_with_stocks[idx + 1]
         return None
     
     def get_daily_stats(self, date_str):
-        """获取某日市场汇总"""
         stocks = self.daily_stocks.get(date_str, [])
         smash = self.daily_smash.get(date_str, {})
         concepts = self.daily_concepts.get(date_str, [])
-        
         total = len(stocks)
-        max_boards = max((s['continuous_boards'] or 0 for s in stocks), default=0)
-        
-        # 连板分布
+        max_boards = max((s.get('continuous_boards', 1) or 1 for s in stocks), default=0)
         board_dist = defaultdict(int)
         for s in stocks:
-            b = s['continuous_boards'] or 0
+            b = s.get('continuous_boards', 1) or 1
             board_dist[b] += 1
-        
         return {
             'date': date_str,
             'total_limit_up': total,
@@ -120,8 +107,6 @@ class DataStore:
 
 
 class SignalChecker:
-    """5个高价值信号的检测器"""
-    
     SIGNALS = {
         1: {
             'name': '5→6突破+砸盘下降',
@@ -154,17 +139,11 @@ class SignalChecker:
         self.data = data
     
     def check_signal_1(self, date_str):
-        """
-        信号1: 5→6突破+砸盘下降
-        条件: 前一日max_boards=5，当日max_boards=6，且当日砸盘系数 < 前日砸盘系数
-        """
         prev_date = self.data.get_prev_date(date_str)
         if not prev_date:
             return None
-        
         prev_stats = self.data.get_daily_stats(prev_date)
         curr_stats = self.data.get_daily_stats(date_str)
-        
         if prev_stats['max_boards'] == 5 and curr_stats['max_boards'] >= 6:
             sc_curr = curr_stats['smash_coefficient']
             sc_prev = prev_stats['smash_coefficient']
@@ -182,19 +161,12 @@ class SignalChecker:
         return {'triggered': False, 'details': {}}
     
     def check_signal_2(self, date_str):
-        """
-        信号2: 砸盘骤降>3+连板≤3
-        条件: 当日砸盘系数比前一日下降超过3，且当日最高连板≤3
-        """
         prev_date = self.data.get_prev_date(date_str)
         if not prev_date:
             return None
-        
         prev_stats = self.data.get_daily_stats(prev_date)
         curr_stats = self.data.get_daily_stats(date_str)
-        
         sc_drop = prev_stats['smash_coefficient'] - curr_stats['smash_coefficient']
-        
         if sc_drop > 3 and curr_stats['max_boards'] <= 3:
             return {
                 'triggered': True,
@@ -208,17 +180,11 @@ class SignalChecker:
         return {'triggered': False, 'details': {}}
     
     def check_signal_3(self, date_str):
-        """
-        信号3: 连续2天砸盘<3+连板≤3
-        条件: 当日和前一日砸盘系数都<3，且两日最高连板都≤3
-        """
         prev_date = self.data.get_prev_date(date_str)
         if not prev_date:
             return None
-        
         prev_stats = self.data.get_daily_stats(prev_date)
         curr_stats = self.data.get_daily_stats(date_str)
-        
         if (curr_stats['smash_coefficient'] < 3 and prev_stats['smash_coefficient'] < 3
                 and curr_stats['max_boards'] <= 3 and prev_stats['max_boards'] <= 3):
             return {
@@ -233,12 +199,7 @@ class SignalChecker:
         return {'triggered': False, 'details': {}}
     
     def check_signal_4(self, date_str):
-        """
-        信号4: 7板+砸盘>6
-        条件: 当日最高连板=7且砸盘系数>6，见顶崩塌信号
-        """
         curr_stats = self.data.get_daily_stats(date_str)
-        
         if curr_stats['max_boards'] >= 7 and curr_stats['smash_coefficient'] > 6:
             return {
                 'triggered': True,
@@ -250,12 +211,7 @@ class SignalChecker:
         return {'triggered': False, 'details': {}}
     
     def check_signal_5(self, date_str):
-        """
-        信号5: 4板+涨停数<35+砸盘<3
-        条件: 最高板=4、涨停数<35、砸盘系数<3，假突破预警
-        """
         curr_stats = self.data.get_daily_stats(date_str)
-        
         if (curr_stats['max_boards'] == 4 
                 and curr_stats['total_limit_up'] < 35 
                 and curr_stats['smash_coefficient'] < 3):
@@ -270,7 +226,6 @@ class SignalChecker:
         return {'triggered': False, 'details': {}}
     
     def check_all_signals(self, date_str):
-        """检查某日所有信号"""
         results = {}
         for sig_id in range(1, 6):
             method = getattr(self, f'check_signal_{sig_id}')
@@ -279,15 +234,12 @@ class SignalChecker:
 
 
 class Backtester:
-    """回测引擎"""
-    
-    # 信号方向含义: True=看多(预期涨停数上升), False=看空/风险
     SIGNAL_DIRECTION = {
-        1: 'bullish',  # 5→6突破看多
-        2: 'bullish',  # 砸盘骤降见底反弹
-        3: 'bullish',  # 底部确认
-        4: 'bearish',  # 见顶崩塌
-        5: 'bearish',  # 假突破预警
+        1: 'bullish',
+        2: 'bullish',
+        3: 'bullish',
+        4: 'bearish',
+        5: 'bearish',
     }
     
     def __init__(self, data: DataStore = None):
@@ -295,17 +247,13 @@ class Backtester:
         self.checker = SignalChecker(self.data)
     
     def _evaluate_next_day(self, trigger_date):
-        """评估触发日的次日市场表现"""
         next_date = self.data.get_next_date(trigger_date)
         if not next_date:
             return None
-        
         curr_stats = self.data.get_daily_stats(trigger_date)
         next_stats = self.data.get_daily_stats(next_date)
-        
         limit_up_change = next_stats['total_limit_up'] - curr_stats['total_limit_up']
         boards_change = next_stats['max_boards'] - curr_stats['max_boards']
-        
         return {
             'next_date': next_date,
             'next_total_limit_up': next_stats['total_limit_up'],
@@ -316,39 +264,24 @@ class Backtester:
         }
     
     def _is_signal_correct(self, signal_id, trigger_date, next_day_result):
-        """判断信号是否正确"""
         if next_day_result is None:
             return None
-        
         direction = self.SIGNAL_DIRECTION[signal_id]
         lu_change = next_day_result['limit_up_change']
         boards_change = next_day_result['boards_change']
-        
         if direction == 'bullish':
-            # 看多信号: 次日涨停数上升或连板上升为正确
             return lu_change > 0 or boards_change > 0
         else:
-            # 看空信号: 次日涨停数下降或连板下降为正确（严格标准：两者之一下降即可）
-            # 对于bearish，需要真正出现降温
             return lu_change < 0 or boards_change < 0
     
     def run_backtest(self, start_date=None, end_date=None):
-        """
-        全量回测所有信号
-        返回完整回测报告
-        """
         days = self.data.trading_days_with_stocks
-        
         if start_date:
             days = [d for d in days if d >= start_date]
         if end_date:
             days = [d for d in days if d <= end_date]
-        
-        # 去掉最后一天(无法验证次日)
         if days and days[-1] == self.data.trading_days_with_stocks[-1]:
             days = days[:-1]
-        
-        # 每个信号的回测结果
         signal_results = {i: {
             'name': SignalChecker.SIGNALS[i]['name'],
             'stars': SignalChecker.SIGNALS[i]['stars'],
@@ -358,63 +291,49 @@ class Backtester:
             'unverified': 0,
             'total_limit_up_changes': [],
         } for i in range(1, 6)}
-        
-        # 逐日检查
         for date_str in days:
             signal_checks = self.checker.check_all_signals(date_str)
             next_day = self._evaluate_next_day(date_str)
-            
             for sig_id, check_result in signal_checks.items():
                 if check_result is None:
                     continue
                 if not check_result['triggered']:
                     continue
-                
-                # 信号触发
                 trigger_record = {
                     'date': date_str,
                     'details': check_result['details'],
                     'next_day': next_day,
                 }
-                
                 if next_day:
                     is_correct = self._is_signal_correct(sig_id, date_str, next_day)
                     trigger_record['correct'] = is_correct
-                    
                     if is_correct is True:
                         signal_results[sig_id]['correct'] += 1
                     elif is_correct is False:
                         signal_results[sig_id]['incorrect'] += 1
                     else:
                         signal_results[sig_id]['unverified'] += 1
-                    
                     signal_results[sig_id]['total_limit_up_changes'].append(
                         next_day['limit_up_change']
                     )
                 else:
                     trigger_record['correct'] = None
                     signal_results[sig_id]['unverified'] += 1
-                
                 signal_results[sig_id]['triggers'].append(trigger_record)
-        
-        # 汇总统计
         report = {
             'backtest_period': f"{days[0]} ~ {days[-1]}",
             'total_trading_days': len(days),
             'signals': {},
             'synergy_analysis': {},
         }
-        
         for sig_id in range(1, 6):
             sr = signal_results[sig_id]
             total = sr['correct'] + sr['incorrect']
             hit_rate = (sr['correct'] / total * 100) if total > 0 else 0
             avg_change = (sum(sr['total_limit_up_changes']) / len(sr['total_limit_up_changes'])
                          ) if sr['total_limit_up_changes'] else 0
-            
             max_drawdown = min(sr['total_limit_up_changes']) if sr['total_limit_up_changes'] else 0
             max_gain = max(sr['total_limit_up_changes']) if sr['total_limit_up_changes'] else 0
-            
             report['signals'][sig_id] = {
                 'name': sr['name'],
                 'stars': sr['stars'],
@@ -428,16 +347,11 @@ class Backtester:
                 'max_drawdown': max_drawdown,
                 'trigger_dates': [t['date'] for t in sr['triggers']],
             }
-        
-        # 信号协同效应分析
-        # 统计同一天触发多个信号的情况
         all_triggers_by_date = defaultdict(list)
         for sig_id in range(1, 6):
             for t in signal_results[sig_id]['triggers']:
                 all_triggers_by_date[t['date']].append(sig_id)
-        
         multi_signal_dates = {d: sigs for d, sigs in all_triggers_by_date.items() if len(sigs) > 1}
-        
         report['synergy_analysis'] = {
             'multi_signal_dates_count': len(multi_signal_dates),
             'details': {d: {
@@ -445,13 +359,10 @@ class Backtester:
                 'signal_names': [SignalChecker.SIGNALS[s]['name'] for s in sigs],
             } for d, sigs in multi_signal_dates.items()},
         }
-        
-        # 总体策略收益（假设按所有看多信号操作）
         bullish_changes = []
         for sig_id in range(1, 6):
             if self.SIGNAL_DIRECTION[sig_id] == 'bullish':
                 bullish_changes.extend(signal_results[sig_id]['total_limit_up_changes'])
-        
         if bullish_changes:
             report['overall_bullish_strategy'] = {
                 'total_operations': len(bullish_changes),
@@ -460,33 +371,22 @@ class Backtester:
                 'lose_days': sum(1 for c in bullish_changes if c <= 0),
                 'win_rate': round(sum(1 for c in bullish_changes if c > 0) / len(bullish_changes) * 100, 1),
             }
-        
         return report
     
     def run_backtest_single_signal(self, signal_id):
-        """
-        单独回测某个信号
-        signal_id: 1~5
-        """
         if signal_id not in range(1, 6):
             raise ValueError(f"signal_id must be 1~5, got {signal_id}")
-        
-        days = self.data.trading_days_with_stocks[:-1]  # 去掉最后一天
-        
+        days = self.data.trading_days_with_stocks[:-1]
         method = getattr(self.checker, f'check_signal_{signal_id}')
-        
         triggers = []
         correct = 0
         incorrect = 0
-        
         for date_str in days:
             result = method(date_str)
             if result is None or not result['triggered']:
                 continue
-            
             next_day = self._evaluate_next_day(date_str)
             is_correct = self._is_signal_correct(signal_id, date_str, next_day) if next_day else None
-            
             record = {
                 'trigger_date': date_str,
                 'details': result['details'],
@@ -494,12 +394,10 @@ class Backtester:
                 'correct': is_correct,
             }
             triggers.append(record)
-            
             if is_correct is True:
                 correct += 1
             elif is_correct is False:
                 incorrect += 1
-        
         total = correct + incorrect
         return {
             'signal_id': signal_id,
@@ -514,7 +412,6 @@ class Backtester:
         }
     
     def save_to_db(self, report):
-        """保存回测结果到数据库"""
         conn = sqlite3.connect(DB_PATH)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS backtest_results (
@@ -532,10 +429,7 @@ class Backtester:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
         for sig_id in range(1, 6):
-            sig_data = report['signals'].get(sig_id, {})
-            # 获取该信号的详细触发记录
             single = self.run_backtest_single_signal(sig_id)
             for t in single['triggers']:
                 nd = t.get('next_day') or {}
@@ -556,14 +450,12 @@ class Backtester:
                     nd.get('boards_change'),
                     1 if t['correct'] else (0 if t['correct'] is False else None),
                 ))
-        
         conn.commit()
         conn.close()
         print("回测结果已保存到 backtest_results 表")
 
 
 def format_report(report):
-    """格式化输出回测报告"""
     lines = []
     lines.append("=" * 70)
     lines.append("📊 策略回测报告")
@@ -571,7 +463,6 @@ def format_report(report):
     lines.append(f"回测区间: {report['backtest_period']}")
     lines.append(f"交易天数: {report['total_trading_days']}")
     lines.append("")
-    
     for sig_id in range(1, 6):
         s = report['signals'][sig_id]
         stars = '⭐' * s['stars']
@@ -586,7 +477,6 @@ def format_report(report):
         if s['trigger_dates']:
             lines.append(f"  触发日期: {', '.join(s['trigger_dates'])}")
         lines.append("")
-    
     if 'overall_bullish_strategy' in report:
         bs = report['overall_bullish_strategy']
         lines.append(f"{'─' * 60}")
@@ -594,7 +484,6 @@ def format_report(report):
         lines.append(f"  操作次数: {bs['total_operations']}")
         lines.append(f"  平均涨停数变化: {bs['avg_limit_up_change']}")
         lines.append(f"  胜率: {bs['win_rate']}% ({bs['win_days']}胜/{bs['lose_days']}负)")
-    
     sa = report.get('synergy_analysis', {})
     if sa.get('multi_signal_dates_count', 0) > 0:
         lines.append("")
@@ -602,7 +491,6 @@ def format_report(report):
         lines.append(f"🔗 多信号协同 (共{sa['multi_signal_dates_count']}天多信号同时触发):")
         for d, info in list(sa.get('details', {}).items())[:5]:
             lines.append(f"  {d}: {', '.join(info['signal_names'])}")
-    
     lines.append("")
     lines.append("=" * 70)
     return '\n'.join(lines)
@@ -612,20 +500,11 @@ if __name__ == '__main__':
     print("正在加载数据...")
     data = DataStore()
     print(f"加载完成: {len(data.trading_days_with_stocks)} 个交易日")
-    
     bt = Backtester(data)
-    
-    # 全量回测
     print("\n正在执行全量回测...")
     report = bt.run_backtest()
-    
-    # 保存结果
     bt.save_to_db(report)
-    
-    # 打印报告
     print(format_report(report))
-    
-    # 单独回测每个信号
     print("\n\n" + "=" * 70)
     print("📋 各信号详细回测")
     print("=" * 70)

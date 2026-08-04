@@ -1,6 +1,6 @@
 """
 simulator.py - 模拟交易引擎（增强版）
-增加数据库降级价格获取，交易记录显示股票名称
+统一使用 config.DB_PATH 和 xgt_limit_up_detail 表
 """
 
 import sqlite3
@@ -12,20 +12,18 @@ from typing import Dict, List, Optional, Tuple, Any
 import pandas as pd
 import akshare as ak
 
-logger = logging.getLogger(__name__)
+from config import DB_PATH
 
-DB_PATH = "stock_data_1784791326780_0_09ym.db"
+logger = logging.getLogger(__name__)
 _price_cache = {}
 
+
 def get_stock_price(code: str, date: str, price_type: str = 'open') -> Optional[float]:
-    """
-    获取股票价格，优先 akshare，失败则从数据库 latest_price 降级
-    """
+    """获取股票价格，优先 akshare，失败则从数据库降级"""
     cache_key = f"{code}_{date}_{price_type}"
     if cache_key in _price_cache:
         return _price_cache[cache_key]
 
-    # 1. 尝试 akshare（带交易所后缀）
     try:
         if code.startswith(('60', '68')):
             symbol = f"{code}.SH"
@@ -42,11 +40,11 @@ def get_stock_price(code: str, date: str, price_type: str = 'open') -> Optional[
     except Exception as e:
         logger.warning(f"akshare获取 {code} {date} 价格失败: {e}")
 
-    # 2. 降级：从数据库 akshare_limit_up 表获取 latest_price（涨停价）
+    # 降级：从 xgt_limit_up_detail 获取涨停价
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.execute(
-            "SELECT latest_price FROM akshare_limit_up WHERE code = ? AND date = ?",
+            "SELECT price FROM xgt_limit_up_detail WHERE code = ? AND date = ?",
             (code, date)
         )
         row = cursor.fetchone()
@@ -54,7 +52,7 @@ def get_stock_price(code: str, date: str, price_type: str = 'open') -> Optional[
         if row and row[0] is not None:
             price = float(row[0])
             _price_cache[cache_key] = price
-            logger.info(f"[降级] 使用数据库 {code} {date} latest_price = {price}")
+            logger.info(f"[降级] 使用数据库 {code} {date} price = {price}")
             return price
     except Exception as e:
         logger.warning(f"数据库获取 {code} {date} 价格失败: {e}")
@@ -62,8 +60,9 @@ def get_stock_price(code: str, date: str, price_type: str = 'open') -> Optional[
     _price_cache[cache_key] = None
     return None
 
+
 class Simulator:
-    """模拟交易引擎（增强版）"""
+    """模拟交易引擎"""
 
     def __init__(
         self,
@@ -90,7 +89,7 @@ class Simulator:
         self.slippage = slippage
 
         self.cash = init_cash
-        self.positions = {}  # {code: {'shares': int, 'buy_price': float, 'buy_date': str, 'buy_cost': float, 'name': str}}
+        self.positions = {}
         self.net_values = []
         self.trades = []
         self.dates = []
@@ -98,7 +97,7 @@ class Simulator:
     def _get_trading_dates(self) -> List[str]:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.execute("""
-            SELECT DISTINCT date FROM akshare_limit_up
+            SELECT DISTINCT date FROM xgt_limit_up_detail
             WHERE date >= ? AND date <= ?
             ORDER BY date
         """, (self.start_date, self.end_date))
@@ -122,7 +121,6 @@ class Simulator:
                     r['score'] = r['total_score']
                 elif 'score' not in r:
                     r['score'] = 0
-                # 确保 name 字段存在
                 if 'name' not in r or not r['name']:
                     r['name'] = r.get('code', '')
             return recs
@@ -307,12 +305,11 @@ class Simulator:
         if len(self.net_values) < 2:
             return {"error": "数据不足"}
 
-        # 将 trades 中的 code 替换为名称（前端显示用），同时保留原始代码
         trades_for_display = []
         for t in self.trades:
             t_copy = t.copy()
-            t_copy['stock_code'] = t_copy['code']   # 保存原始代码
-            t_copy['code'] = t_copy['name']         # 用名称覆盖 code，前端将显示名称
+            t_copy['stock_code'] = t_copy['code']
+            t_copy['code'] = t_copy['name']
             trades_for_display.append(t_copy)
 
         dates = [nv[0] for nv in self.net_values]
@@ -360,7 +357,7 @@ class Simulator:
             'total_buys': len(buy_trades),
             'total_sells': len(sell_trades),
             'net_values': [{'date': d, 'value': v} for d, v in self.net_values],
-            'trades': trades_for_display,   # 使用替换后的列表
+            'trades': trades_for_display,
             'start_date': self.start_date,
             'end_date': self.end_date,
             'init_cash': self.init_cash,

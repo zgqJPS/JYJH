@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_DIR)
 
+# 统一从 config 导入 DB_PATH
 from config import DB_PATH, KNOWLEDGE_DIR
 from db import Database
 from main import run_fetch
@@ -45,7 +46,6 @@ class ServerChanNotifier:
             logging.error(f"发送微信通知失败: {e}")
             return False
 
-# 从环境变量读取 SCKEY，未配置则禁用
 SERVER_CHAN_SCKEY = os.environ.get("SERVER_CHAN_SCKEY", "SCT302469TzkdqbtA9rEWoHctOuDgRg9K3")
 if not SERVER_CHAN_SCKEY:
     logging.warning("未设置 SERVER_CHAN_SCKEY，微信通知禁用")
@@ -171,11 +171,11 @@ def _determine_analysis_date(preferred_date=None):
         try:
             db = Database(DB_PATH)
             conn = db.conn
-            cur = conn.execute("SELECT COUNT(*) FROM akshare_limit_up WHERE date = ?", (today,))
+            cur = conn.execute("SELECT COUNT(*) FROM xgt_limit_up_detail WHERE date = ?", (today,))
             if cur.fetchone()[0] > 0:
                 data_date = today
             else:
-                cur = conn.execute("SELECT MAX(date) FROM akshare_limit_up")
+                cur = conn.execute("SELECT MAX(date) FROM xgt_limit_up_detail")
                 row = cur.fetchone()
                 data_date = row[0] if row else None
             db.close()
@@ -1246,6 +1246,16 @@ def main():
     create_templates()
     print("[OK] 模板文件已准备")
 
+    # 初始化数据库表
+    try:
+        db = Database(DB_PATH)
+        db.init_new_tables()
+        db.init_default_weights()
+        db.close()
+        print("[DB] 数据库表初始化完成")
+    except Exception as e:
+        print(f"[WARN] 数据库初始化失败: {e}")
+
     try:
         schedule.every().day.at("15:00").do(scheduled_fetch_and_recommend)
         threading.Thread(target=run_scheduler, daemon=True).start()
@@ -1258,7 +1268,7 @@ def main():
         all_dates = db.get_all_dates()
         if all_dates:
             latest_date = all_dates[-1]
-            cursor = db.conn.execute("SELECT COUNT(*) as cnt FROM akshare_limit_up WHERE date = ?", (latest_date,))
+            cursor = db.conn.execute("SELECT COUNT(*) as cnt FROM xgt_limit_up_detail WHERE date = ?", (latest_date,))
             cnt = cursor.fetchone()[0]
             print(f"[DATA] 数据库最新数据日期: {latest_date}, 涨停记录: {cnt}条")
         else:

@@ -4,7 +4,7 @@ config.py - 配置管理模块
 """
 import os
 
-# 数据库路径
+# 数据库路径 - 自动检测（但统一由这里导出，其他模块导入）
 _db_candidates = [
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "stock_data_1784791326780_0_09ym.db"),
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "stock_data_1784791326780_0_09ym.db"),
@@ -19,16 +19,6 @@ if DB_PATH is None:
 
 # 知识库目录
 KNOWLEDGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge")
-
-# ============ 数据过滤配置 ============
-DATA_FILTER_CONFIG = {
-    # 主板代码前缀（沪市60，深市00）
-    "main_board_prefixes": ("60", "00"),
-    # 需要排除的代码前缀（科创板、创业板、北交所等）
-    "excluded_prefixes": ("30", "68", "8", "400", "420", "430", "830"),
-    # ST股关键词
-    "st_keywords": ("ST", "*ST"),
-}
 
 # ============ 市场分析参数 ============
 ANALYSIS_CONFIG = {
@@ -55,7 +45,6 @@ ANALYSIS_CONFIG = {
     "concept_emerging_threshold": 3,
 }
 
-# ============ 预测参数 ============
 PREDICT_CONFIG = {
     "prediction_types": [
         "limit_up_count",
@@ -69,7 +58,6 @@ PREDICT_CONFIG = {
     "recency_weight": 0.6,
 }
 
-# ============ 自我修正参数 ============
 CORRECTION_CONFIG = {
     "ewma_alpha": 0.3,
     "adjustment_step": 0.05,
@@ -81,28 +69,18 @@ CORRECTION_CONFIG = {
     "knowledge_decay_factor": 0.95,
 }
 
-# ============ 砸盘系数配置 ============
 SMASH_CONFIG = {
-    # 砸盘系数阈值（统一从这里读取）
-    "low_pressure_threshold": 4.0,      # 低于此值：抛压轻
-    "high_pressure_threshold": 7.0,     # 高于此值：抛压重
-    "climax_threshold": 4.5,            # 高潮期判断用
-    "main_rise_threshold": 3.0,         # 主升期判断用
-    "prediction_weight": 0.35,          # 砸盘系数在预测中的基础权重
-    "score_penalty_high": -5,           # 抛压重时的扣分
-    "score_bonus_low": 3,               # 抛压轻时的加分
-    "stop_loss_extension": 2.0,         # 抛压重时止损放宽百分比
-    "max_board_level": 10,              # 最大连板级别
-    # 趋势判断阈值
-    "trend_rise_threshold": 1.0,        # 上升趋势判定阈值
-    "trend_fall_threshold": -1.0,       # 下降趋势判定阈值
-    # 信号判断阈值
-    "signal_high_risk": 6.0,            # 高风险阈值
-    "signal_medium_risk": 4.0,          # 中等风险阈值
-    "signal_low_risk": 2.0,             # 低风险阈值
+    "low_pressure_threshold": 4.0,
+    "high_pressure_threshold": 7.0,
+    "climax_threshold": 4.5,
+    "main_rise_threshold": 3.0,
+    "prediction_weight": 0.35,
+    "score_penalty_high": -5,
+    "score_bonus_low": 3,
+    "stop_loss_extension": 2.0,
+    "max_board_level": 10,
 }
 
-# ============ 日志配置 ============
 LOG_CONFIG = {
     "level": "INFO",
     "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",

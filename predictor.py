@@ -2,6 +2,7 @@
 predictor.py - 预测引擎 (v2.0 升级版)
 基于当前市场状态、历史数据和知识库，生成多维度预测。
 每个预测附带置信度。砸盘系数作为核心预测因子，权重最高。
+统一使用 xgt_limit_up_detail 表的字段：limit_up_days, seal_ratio
 """
 import logging
 import math
@@ -329,7 +330,6 @@ class Predictor:
         predictions["smash_prediction"] = self._predict_by_smash(
             date_str, analysis_result, pattern_result, history)
 
-        # ★★★ 修复：对 _generate_advice 添加异常保护 ★★★
         try:
             predictions["operation_advice"] = self._generate_advice(
                 date_str, analysis_result, pattern_result, predictions, state_info, long_history)
@@ -346,6 +346,10 @@ class Predictor:
         return predictions
 
     def _get_recent_history(self, date_str, days=10):
+        """
+        获取最近N天的历史数据
+        使用 limit_up_days 替代 continuous_boards
+        """
         all_dates = self.db.get_all_dates()
         if date_str not in all_dates:
             return []
@@ -363,7 +367,7 @@ class Predictor:
                 stocks = self.db.get_limit_up_data(d)
                 if stocks:
                     stocks = [dict(s) for s in stocks]
-                    boards = [s.get("continuous_boards", 1) or 1 for s in stocks]
+                    boards = [s.get("limit_up_days", 1) or 1 for s in stocks]
                     history.append({
                         "date": d,
                         "limit_up_count": len(stocks),
@@ -867,7 +871,6 @@ class Predictor:
         smash_signal = smash_data.get("signal", "未知")
         smash_trade_advice = smash_data.get("trade_advice", "")
 
-        # ★★★ 修复：调用 _compute_signal_strength 捕获异常 ★★★
         try:
             signal_strength = self._compute_signal_strength(
                 date_str, analysis, predictions, state_info, long_history)
@@ -918,7 +921,6 @@ class Predictor:
             "reason": reason,
         }
 
-    # ★★★ 修复：增加长度检查 ★★★
     def _compute_signal_strength(self, date_str, analysis, predictions, state_info, long_history):
         """
         计算综合信号强度（0-1标准化）
@@ -938,7 +940,6 @@ class Predictor:
         smash_data = self.state_engine.get_recent_smash_data(date_str, days=10)
         if smash_data:
             recent_smash = [s['smash'] for s in smash_data if s.get('smash') is not None]
-            # ★★★ 检查长度 ★★★
             if len(recent_smash) >= 3:
                 declining = sum(1 for i in range(-3, 0)
                                 if recent_smash[i] < recent_smash[i - 1])
