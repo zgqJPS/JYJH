@@ -208,15 +208,13 @@ class Reporter:
             lines.append(f"**趋势分析:** {trend_analysis}")
             lines.append("")
 
-        # 近期走势
+        # 近期走势（适配简单数值列表）
         trend_values = smash_data.get("trend_values", [])
         if trend_values:
             lines.append("**近期走势:**")
-            for tv in trend_values:
-                d = tv.get("date", "")
-                v = tv.get("value", 0)
+            for v in trend_values:  # 直接遍历数值
                 bar = "█" * int(v)
-                lines.append(f"- {d}: {v:.2f} {bar}")
+                lines.append(f"- {v:.2f} {bar}")
             lines.append("")
 
         # 优劣势

@@ -1,11 +1,6 @@
 """
 app.py - Web 应用入口（V6 增强部署版）
-封装 market_advisor 分析系统为 Web 服务
-集成智能推荐、实盘跟踪、自适应升级、信号监控、出场策略、微信通知
-并加入完整的线上部署功能（ngrok 隧道、数据状态检查、定时任务调度等）
-
-新增：每日 15:00 自动执行数据获取+智能推荐，推送微信通知
-新增：模拟交易回测功能
+移除 ngrok，添加健康检查，适配 Railway 部署
 """
 
 import sys
@@ -96,9 +91,6 @@ try:
 except Exception as e:
     _new_modules_status['simulator'] = f'error: {e}'
 
-# ============ 数据库连接增强 ============
-# 在 Database 类中已设置 check_same_thread=False，确保所有查询通过该实例
-
 # ============ 任务状态 ============
 tasks = {}
 tasks_lock = threading.Lock()
@@ -110,7 +102,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("web")
 
 
-# ============ 通知辅助 ============
 def send_recommend_notification(date_str, recommendations, market_state, next_day):
     if not notifier:
         return False
@@ -140,32 +131,22 @@ def send_recommend_notification(date_str, recommendations, market_state, next_da
     return notifier.send_notification(title, content)
 
 
-# ============ 交易日检查器（已有） ============
 class TradingDayChecker:
-    """交易日检查器（简化版）"""
     @staticmethod
     def is_trading_day(date_str: str = None) -> tuple:
         if not date_str:
             date_str = datetime.now().strftime("%Y-%m-%d")
-        # 简单判断：周末和特定节假日（示例）
         dt = datetime.strptime(date_str, "%Y-%m-%d")
         if dt.weekday() >= 5:
             return False, f"{date_str} 是周末"
-        # 这里可扩展节假日列表，为简化，默认非周末为交易日
         return True, f"{date_str} 是交易日"
 
 
-# ============ 日期工具 ============
 def get_next_trading_day(date_str: str) -> str:
-    """
-    从数据库获取指定日期之后的下一个有数据的交易日
-    若无后续交易日，返回 None
-    """
     try:
         db = Database(DB_PATH)
         all_dates = db.get_all_dates()
         if date_str not in all_dates:
-            # 尝试找大于该日期的第一个日期
             for d in all_dates:
                 if d > date_str:
                     return d
@@ -176,7 +157,6 @@ def get_next_trading_day(date_str: str) -> str:
         return None
     except Exception as e:
         logger.error(f"获取下一交易日失败: {e}")
-        # 降级：简单加一天
         try:
             dt = datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)
             return dt.strftime("%Y-%m-%d")
@@ -185,13 +165,9 @@ def get_next_trading_day(date_str: str) -> str:
 
 
 def _determine_analysis_date(preferred_date=None):
-    """
-    确定分析日期（数据日期）和预测目标日期
-    """
     today = datetime.now().strftime("%Y-%m-%d")
     data_date = preferred_date
     if not data_date:
-        # 优先检查今天数据是否已入库
         try:
             db = Database(DB_PATH)
             conn = db.conn
@@ -207,12 +183,10 @@ def _determine_analysis_date(preferred_date=None):
             data_date = None
     if not data_date:
         return None, None
-    # 获取下一交易日
     target_date = get_next_trading_day(data_date)
     return data_date, target_date
 
 
-# ============ 任务执行 ============
 def run_task(task_id, task_type, params=None):
     with tasks_lock:
         tasks[task_id] = {
@@ -264,7 +238,6 @@ def _run_fetch_task(task_id, params):
             tasks[task_id]["result"] = {"fetched_count": 0}
             return
 
-    # 自动推荐
     if result and result > 0 and _smart_recommender:
         try:
             with tasks_lock:
@@ -272,17 +245,14 @@ def _run_fetch_task(task_id, params):
                 tasks[task_id]["progress"] = 75
             data_date, target_date = _determine_analysis_date(date_str)
             if data_date:
-                # 信号检测
                 if _live_tracker:
                     try:
                         _live_tracker.evaluate_signals(data_date, DB_PATH)
                     except:
                         pass
-                # 市场分析
                 market_state = _smart_recommender.analyze_current_market(data_date, DB_PATH)
                 recs = _smart_recommender.generate_recommendations(data_date, top_n=5, db_path=DB_PATH)
                 next_day = _smart_recommender.recommend_for_next_day(data_date, DB_PATH)
-                # 序列化
                 rec_serialized = []
                 for r in recs:
                     rec_serialized.append({
@@ -298,7 +268,6 @@ def _run_fetch_task(task_id, params):
                         "limit_up_days": r.get("limit_up_days", 1),
                         "dimension_scores": r.get("dimension_scores", {}),
                         "dimension_reasons": r.get("dimension_reasons", {}),
-                        # 新增等级相关字段
                         "confidence_level": r.get("confidence_level", "C"),
                         "confidence_name": r.get("confidence_name", "C级·中等"),
                         "historical_win_rate": r.get("historical_win_rate", 0.50),
@@ -331,7 +300,6 @@ def _run_fetch_task(task_id, params):
                     tasks[task_id]["status"] = "completed"
                     predict_msg = f"（预测{target_date}）" if target_date else ""
                     tasks[task_id]["message"] = f"数据获取成功，基于{data_date}生成{len(rec_serialized)}只个股预测{predict_msg}"
-                # 微信通知
                 try:
                     send_recommend_notification(data_date, rec_serialized, market_state, next_day)
                 except:
@@ -440,7 +408,6 @@ def _run_recommend_task(task_id, params):
                 "historical_win_rate": r.get("historical_win_rate", 0.50),
                 "condition_match": r.get("condition_match", ""),
             })
-
         with tasks_lock:
             tasks[task_id]["progress"] = 100
             tasks[task_id]["status"] = "completed"
@@ -470,7 +437,6 @@ def _run_recommend_task(task_id, params):
                     "overall_strategy": next_day.get("overall_strategy", ""),
                 },
             }
-        # 微信通知
         try:
             send_recommend_notification(data_date, rec_serialized, market_state, next_day)
         except:
@@ -572,14 +538,12 @@ def _run_auto_upgrade_task(task_id, params):
 
 
 def _run_simulate_task(task_id, params):
-    """执行模拟交易回测"""
     from simulator import Simulator
     with tasks_lock:
         tasks[task_id]["message"] = "启动模拟交易..."
         tasks[task_id]["progress"] = 10
 
     try:
-        # 获取参数
         start_date = params.get('start_date')
         end_date = params.get('end_date')
         init_cash = params.get('init_cash', 1000000)
@@ -589,21 +553,18 @@ def _run_simulate_task(task_id, params):
         max_positions = params.get('max_positions', 5)
         position_pct = params.get('position_pct', 0.2)
 
-        # 如果未指定结束日期，使用最新交易日
         if not end_date:
             db = Database(DB_PATH)
             all_dates = db.get_all_dates()
             end_date = all_dates[-1] if all_dates else datetime.now().strftime("%Y-%m-%d")
             db.close()
         if not start_date:
-            # 默认从半年前开始
             start_date = (datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=180)).strftime("%Y-%m-%d")
 
         with tasks_lock:
             tasks[task_id]["message"] = f"正在回测 {start_date} 至 {end_date}..."
             tasks[task_id]["progress"] = 30
 
-        # 创建模拟器并运行
         sim = Simulator(
             start_date=start_date,
             end_date=end_date,
@@ -912,7 +873,6 @@ def handle_start_auto_upgrade(body):
 
 
 def handle_start_simulate(body):
-    """启动模拟交易回测"""
     data = json.loads(body) if body else {}
     task_id = str(uuid.uuid4())[:8]
     thread = threading.Thread(target=run_task, args=(task_id, "simulate", data))
@@ -1026,14 +986,11 @@ def handle_modules_status():
 
 
 def handle_exit_signals(params):
-    """获取出场信号（市场+个股）"""
     if _exit_strategy is None:
         return {"success": False, "error": "exit_strategy模块未加载"}
     try:
         date = params.get('date', [None])[0]
-        # 市场层面
         market_advice = _exit_strategy.check_market_exit_signals(date=date)
-        # 个股层面（获取今日高板个股的出场信号）
         stock_advices = []
         latest_date = market_advice.get('date')
         if latest_date:
@@ -1052,7 +1009,6 @@ def handle_exit_signals(params):
                         stock_advices.append(advice)
             except Exception as e:
                 logger.warning(f"获取个股出场信号失败: {e}")
-        # 综合判断
         overall_action = 'NORMAL'
         if market_advice['market_exit_urgency'] == 'CRITICAL':
             overall_action = 'CLEAR_ALL'
@@ -1086,7 +1042,9 @@ class RequestHandler(SimpleHTTPRequestHandler):
             path = parsed.path
             params = parse_qs(parsed.query)
 
-            if path == "/api/dashboard":
+            if path == "/health":
+                self._json_response({"status": "ok"}, 200)
+            elif path == "/api/dashboard":
                 self._json_response(handle_dashboard())
             elif path == "/api/daily/status":
                 self._json_response(handle_task_status(params))
@@ -1196,15 +1154,11 @@ class RequestHandler(SimpleHTTPRequestHandler):
 # ============ 模板生成（保持原有） ============
 
 def create_templates():
-    """生成所有模板和静态文件（仅在文件不存在时创建）"""
     os.makedirs(TEMPLATE_DIR, exist_ok=True)
     os.makedirs(STATIC_DIR, exist_ok=True)
 
-    # 仅当 index.html 不存在时才生成
     index_path = os.path.join(TEMPLATE_DIR, "index.html")
     if not os.path.exists(index_path):
-        # 这里可以放置完整的 index.html 内容（可从前一个版本复制）
-        # 为简洁起见，此处留空，实际部署时可复制完整内容
         pass
 
     app_js_path = os.path.join(STATIC_DIR, "app.js")
@@ -1216,90 +1170,14 @@ def create_templates():
         pass
 
 
-# ============ 部署增强功能（ngrok 隧道、数据状态检查、定时任务） ============
-
-def setup_ngrok():
-    """设置ngrok隧道 - 修复已存在隧道的问题"""
-    try:
-        from pyngrok import ngrok, conf, exception
-        
-        ngrok_token = os.environ.get("NGROK_TOKEN", "35N468LQPlnSyOUoIJJFTY9DkN2_43HXgfv13d7kZDbEGEg1Q")
-        
-        if ngrok_token:
-            try:
-                ngrok.set_auth_token(ngrok_token)
-                logger.info("[OK] ngrok认证令牌设置成功")
-            except Exception as e:
-                logger.warning(f"[WARN] 设置ngrok认证令牌失败: {e}")
-        
-        try:
-            tunnels = ngrok.get_tunnels()
-            if tunnels:
-                logger.info(f"[NET] 发现 {len(tunnels)} 个现有ngrok隧道")
-                public_url = tunnels[0].public_url
-                logger.info(f"[NET] 使用现有ngrok隧道: {public_url}")
-                return public_url
-        except Exception as e:
-            logger.warning(f"[WARN] 检查现有隧道失败: {e}")
-        
-        logger.info("[NET] 正在创建新的ngrok隧道...")
-        
-        try:
-            try:
-                ngrok.kill()
-            except:
-                pass
-            
-            time.sleep(1)
-            
-            public_url = ngrok.connect(5000, bind_tls=True)
-            public_url = public_url.public_url if hasattr(public_url, 'public_url') else str(public_url)
-            
-            logger.info(f"[OK] ngrok隧道创建成功: {public_url}")
-            return public_url
-            
-        except exception.PyngrokNgrokError as e:
-            if "already online" in str(e):
-                logger.warning("[WARN] ngrok隧道已存在，尝试获取现有地址")
-                try:
-                    tunnels = ngrok.get_tunnels()
-                    if tunnels:
-                        public_url = tunnels[0].public_url
-                        logger.info(f"[NET] 使用现有隧道地址: {public_url}")
-                        return public_url
-                except:
-                    pass
-            
-            try:
-                logger.info("[NET] 尝试使用随机子域名创建隧道...")
-                import random
-                random_subdomain = f"stock-{random.randint(1000, 9999)}"
-                public_url = ngrok.connect(5000, subdomain=random_subdomain, bind_tls=True)
-                public_url = public_url.public_url if hasattr(public_url, 'public_url') else str(public_url)
-                logger.info(f"[OK] 使用随机子域名创建隧道成功: {public_url}")
-                return public_url
-            except Exception as e2:
-                logger.error(f"[ERROR] 创建随机子域名隧道失败: {e2}")
-                raise e
-                
-    except ImportError:
-        logger.warning("[WARN] pyngrok未安装，如需公网访问请运行: pip install pyngrok")
-        return None
-    except Exception as e:
-        logger.error(f"[ERROR] ngrok启动失败: {e}")
-        return None
-
-
 # ============ 定时任务函数 ============
 def run_scheduler():
-    """调度线程主循环"""
     while True:
         schedule.run_pending()
         time.sleep(60)
 
 
 def scheduled_fetch_and_recommend():
-    """定时执行：获取今日数据 -> 推荐 -> 微信通知"""
     today = datetime.now().strftime("%Y-%m-%d")
     is_trading, msg = TradingDayChecker.is_trading_day(today)
     if not is_trading:
@@ -1307,7 +1185,6 @@ def scheduled_fetch_and_recommend():
         return
 
     logger.info("定时任务开始执行: 获取数据并生成推荐")
-    # 1. 获取数据
     try:
         result = run_fetch(date_str=today)
         if result is None or result == 0:
@@ -1318,7 +1195,6 @@ def scheduled_fetch_and_recommend():
         logger.error(f"定时任务: 获取数据异常 {e}")
         return
 
-    # 2. 生成推荐并发送通知
     try:
         data_date, target_date = _determine_analysis_date(today)
         if not data_date:
@@ -1327,11 +1203,9 @@ def scheduled_fetch_and_recommend():
         if _smart_recommender is None:
             logger.warning("定时任务: 智能推荐模块未加载")
             return
-        # 市场分析
         market_state = _smart_recommender.analyze_current_market(data_date, DB_PATH)
         recs = _smart_recommender.generate_recommendations(data_date, top_n=5, db_path=DB_PATH)
         next_day = _smart_recommender.recommend_for_next_day(data_date, DB_PATH)
-        # 序列化推荐
         rec_serialized = []
         for r in recs:
             rec_serialized.append({
@@ -1352,7 +1226,6 @@ def scheduled_fetch_and_recommend():
                 "historical_win_rate": r.get("historical_win_rate", 0.50),
                 "condition_match": r.get("condition_match", ""),
             })
-        # 发送微信通知
         send_recommend_notification(data_date, rec_serialized, market_state, next_day)
         logger.info("定时任务: 微信通知发送完成")
     except Exception as e:
@@ -1366,24 +1239,20 @@ class ReuseHTTPServer(HTTPServer):
 
 
 def main():
-    # 打印系统标题
     print("=" * 70)
     print("[*] 市场分析系统 V6 (增强部署版)")
     print("=" * 70)
-    
-    # 创建模板（如果不存在）
+
     create_templates()
     print("[OK] 模板文件已准备")
-    
-    # 启动定时任务（每日15:00）
+
     try:
         schedule.every().day.at("15:00").do(scheduled_fetch_and_recommend)
         threading.Thread(target=run_scheduler, daemon=True).start()
         print("[SCHEDULE] 每日15:00自动获取数据并推荐已启用")
     except Exception as e:
         print(f"[WARN] 定时任务设置失败: {e}")
-    
-    # 检查数据库数据状态
+
     try:
         db = Database(DB_PATH)
         all_dates = db.get_all_dates()
@@ -1397,26 +1266,13 @@ def main():
         db.close()
     except Exception as e:
         print(f"[WARN] 检查数据状态失败: {e}")
-    
-    # 启动 ngrok 隧道（可选）
-    public_url = setup_ngrok()
-    if public_url:
-        print(f"[NET] 公网访问地址: {public_url}")
-    
-    # 打印本地地址
-    import socket
-    hostname = socket.gethostname()
-    local_ip = socket.gethostbyname(hostname)
-    print(f"[NET] 局域网访问地址: http://{local_ip}:5000")
-    print(f"[NET] 本地访问地址: http://localhost:5000")
-    
-    print("[OK] 服务器启动成功！")
-    print("[INFO] 按 Ctrl+C 停止服务器")
-    
-    # 启动 HTTP 服务器
+
     host = "0.0.0.0"
     port = int(os.environ.get("PORT", 5000))
+    print(f"[NET] 监听地址: {host}:{port}")
     server = ReuseHTTPServer((host, port), RequestHandler)
+    print("[OK] 服务器启动成功！")
+    print("[INFO] 按 Ctrl+C 停止服务器")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

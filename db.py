@@ -21,8 +21,6 @@ class Database:
     def _connect(self):
         """建立数据库连接"""
         try:
-            # 使用 isolation_level=None 关闭Python的隐式事务管理
-            # 这样每条SQL（包括CREATE TABLE）都会立即生效，无需手动commit
             self.conn = sqlite3.connect(self.db_path, isolation_level=None)
             self.conn.row_factory = sqlite3.Row
             logger.info(f"数据库连接成功: {self.db_path}")
@@ -80,7 +78,7 @@ class Database:
     def init_new_tables(self):
         """初始化系统所需的新表"""
         tables = [
-            # 涨停基础数据表（akshare数据源）
+            # 涨停基础数据表（akshare数据源，作为降级备用）
             """CREATE TABLE IF NOT EXISTS akshare_limit_up (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
@@ -146,7 +144,7 @@ class Database:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
 
-            # 每日市场快照表（用于回测和统计）
+            # 每日市场快照表
             """CREATE TABLE IF NOT EXISTS daily_snapshot (
                 date TEXT PRIMARY KEY,
                 limit_up_count INTEGER,
@@ -173,8 +171,8 @@ class Database:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""",
 
-            # 选股宝涨停详情表（存储从选股宝获取的概念和涨停原因数据）
-            """CREATE TABLE IF NOT EXISTS xgb_limit_up_detail (
+            # 选股宝涨停详情表（主数据源）
+            """CREATE TABLE IF NOT EXISTS xgt_limit_up_detail (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
                 code TEXT NOT NULL,
@@ -185,7 +183,7 @@ class Database:
                 UNIQUE(date, code)
             )""",
 
-            # 概念统计表（汇总每日各概念的涨停数量）
+            # 概念统计表
             """CREATE TABLE IF NOT EXISTS concept_statistics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
@@ -194,7 +192,7 @@ class Database:
                 UNIQUE(date, concept)
             )""",
 
-            # 砸盘系数结果表（核心主导指标）
+            # 砸盘系数结果表（旧，保留兼容，后续可废弃）
             """CREATE TABLE IF NOT EXISTS smash_coefficient_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
@@ -202,16 +200,115 @@ class Database:
                 max_continuous_boards INTEGER,
                 UNIQUE(date)
             )""",
+
+            # 砸盘系数主表（统一数据源）
+            """CREATE TABLE IF NOT EXISTS smash_coefficients (
+                trade_date TEXT PRIMARY KEY,
+                smash_coefficient REAL,
+                max_continuous_days INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # 炸板池表
+            """CREATE TABLE IF NOT EXISTS xgt_break_limit_up (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                code TEXT NOT NULL,
+                name TEXT,
+                change_percent REAL,
+                limit_up_days INTEGER,
+                break_times INTEGER,
+                concept TEXT,
+                UNIQUE(date, code)
+            )""",
+
+            # 跌停池表
+            """CREATE TABLE IF NOT EXISTS xgt_limit_down (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                code TEXT NOT NULL,
+                name TEXT,
+                change_percent REAL,
+                break_times INTEGER,
+                UNIQUE(date, code)
+            )""",
+
+            # 每日汇总表
+            """CREATE TABLE IF NOT EXISTS xgt_daily_summary (
+                date TEXT PRIMARY KEY,
+                limit_up_count INTEGER,
+                limit_down_count INTEGER,
+                break_limit_up_count INTEGER,
+                rise_count INTEGER,
+                fall_count INTEGER,
+                explosion_rate REAL,
+                rise_fall_ratio REAL,
+                market_heat REAL,
+                max_continuous_boards INTEGER,
+                board_distribution TEXT
+            )""",
+
+            # 周期上下文表
+            """CREATE TABLE IF NOT EXISTS cycle_context (
+                date TEXT PRIMARY KEY,
+                cycle_phase TEXT,
+                general_dragon_code TEXT,
+                general_dragon_name TEXT,
+                max_continuous_boards INTEGER,
+                prev_max_boards INTEGER,
+                dragon_break_date TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # 推荐系统辅助表
+            """CREATE TABLE IF NOT EXISTS recommendation_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rec_date TEXT NOT NULL,
+                target_date TEXT NOT NULL,
+                code TEXT NOT NULL,
+                name TEXT,
+                score REAL,
+                reason TEXT,
+                win_rate_estimate REAL,
+                suggested_action TEXT,
+                actual_result TEXT,
+                actual_return REAL,
+                is_correct INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # 信号跟踪表
+            """CREATE TABLE IF NOT EXISTS signal_tracking (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id INTEGER NOT NULL,
+                trigger_date TEXT NOT NULL,
+                trigger_stocks TEXT,
+                next_day_result TEXT,
+                avg_return REAL,
+                verified INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+            # 权重调整日志表
+            """CREATE TABLE IF NOT EXISTS weight_adjustment_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                adjust_date TEXT NOT NULL,
+                dimension TEXT NOT NULL,
+                old_weight REAL,
+                new_weight REAL,
+                reason TEXT,
+                accuracy_before REAL,
+                accuracy_after REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
         ]
 
-        # 直接使用cursor建表，绕过execute()方法，确保DDL事务正确提交
         cursor = self.conn.cursor()
         success_count = 0
         for sql in tables:
             try:
                 cursor.execute(sql)
                 success_count += 1
-                logger.info(f"表创建/验证成功")
             except Exception as e:
                 logger.error(f"建表失败: {e}")
         self.conn.commit()
@@ -220,13 +317,15 @@ class Database:
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
         existing = {row[0] for row in cursor.fetchall()}
         required = ['akshare_limit_up', 'prediction_records', 'model_weights',
-                     'market_knowledge', 'correction_log', 'daily_snapshot',
-                     'backtest_records', 'xgb_limit_up_detail',
-                     'concept_statistics', 'smash_coefficient_results']
+                    'market_knowledge', 'correction_log', 'daily_snapshot',
+                    'backtest_records', 'xgt_limit_up_detail',
+                    'concept_statistics', 'smash_coefficients',
+                    'xgt_break_limit_up', 'xgt_limit_down', 'xgt_daily_summary',
+                    'cycle_context', 'recommendation_log', 'signal_tracking',
+                    'weight_adjustment_log']
         missing = [t for t in required if t not in existing]
         if missing:
             logger.error(f"⚠️ 以下表创建后仍不存在: {missing}")
-            logger.error(f"当前数据库所有表: {sorted(existing)}")
         else:
             logger.info(f"✅ 所有{len(required)}张表验证通过 (成功创建{success_count}张)")
 
@@ -296,15 +395,15 @@ class Database:
     def init_default_weights(self):
         """初始化默认权重"""
         default_factors = {
-            "momentum_factor": 0.5,        # 动量因子
-            "continuation_factor": 0.5,     # 晋级率因子
-            "concept_heat_factor": 0.5,     # 概念热度因子
-            "seal_quality_factor": 0.5,     # 封板质量因子
-            "cycle_factor": 0.5,           # 周期因子
-            "dragon_factor": 0.5,          # 龙头因子
-            "volume_factor": 0.5,          # 量能因子
-            "breadth_factor": 0.5,         # 宽度因子
-            "smash_factor": 0.7,           # 砸盘系数因子（初始权重最高，核心主导）
+            "momentum_factor": 0.5,
+            "continuation_factor": 0.5,
+            "concept_heat_factor": 0.5,
+            "seal_quality_factor": 0.5,
+            "cycle_factor": 0.5,
+            "dragon_factor": 0.5,
+            "volume_factor": 0.5,
+            "breadth_factor": 0.5,
+            "smash_factor": 0.7,
         }
         for name, weight in default_factors.items():
             existing = self.get_weight(name)
@@ -379,20 +478,38 @@ class Database:
         params.append(limit)
         return self.fetch_all(sql, params)
 
-    # ============ 涨停数据查询（原有数据） ============
+    # ============ 涨停数据查询 ============
     def get_limit_up_data(self, date):
-        """获取某日涨停数据"""
-        return self.fetch_all(
-            "SELECT * FROM akshare_limit_up WHERE date = ?", (date,))
+        """获取某日涨停数据（从主表查询）"""
+        try:
+            rows = self.fetch_all(
+                "SELECT * FROM xgt_limit_up_detail WHERE date = ?", (date,))
+            if rows:
+                return rows
+            # 降级到旧表
+            return self.fetch_all(
+                "SELECT * FROM akshare_limit_up WHERE date = ?", (date,))
+        except Exception:
+            return self.fetch_all(
+                "SELECT * FROM akshare_limit_up WHERE date = ?", (date,))
 
     def get_all_dates(self):
         """获取所有有数据的日期"""
-        rows = self.fetch_all(
-            "SELECT DISTINCT date FROM akshare_limit_up ORDER BY date")
-        return [r["date"] for r in rows]
+        try:
+            rows = self.fetch_all(
+                "SELECT DISTINCT date FROM xgt_limit_up_detail ORDER BY date")
+            if rows:
+                return [r["date"] for r in rows]
+            rows = self.fetch_all(
+                "SELECT DISTINCT date FROM akshare_limit_up ORDER BY date")
+            return [r["date"] for r in rows]
+        except Exception:
+            rows = self.fetch_all(
+                "SELECT DISTINCT date FROM akshare_limit_up ORDER BY date")
+            return [r["date"] for r in rows]
 
     def get_concept_data(self, date):
-        """获取某日概念数据（从concept_statistics表）"""
+        """获取某日概念数据"""
         return self.fetch_all(
             "SELECT * FROM concept_statistics WHERE date = ?", (date,))
 
@@ -402,24 +519,21 @@ class Database:
             "SELECT * FROM cycle_context WHERE date = ?", (date,))
 
     def get_limit_up_with_concepts(self, date):
-        """获取含概念的涨停数据（从选股宝详情表JOIN）"""
+        """获取含概念的涨停数据"""
         return self.fetch_all(
             """SELECT l.*, x.concept, x.reason 
-               FROM akshare_limit_up l
-               LEFT JOIN xgb_limit_up_detail x ON l.date = x.date AND l.code = x.code
+               FROM xgt_limit_up_detail l
+               LEFT JOIN concept_statistics c ON l.date = c.date AND l.concept = c.concept
                WHERE l.date = ?""", (date,))
 
     # ============ 选股宝涨停详情操作 ============
     def save_xgb_detail(self, records, date):
-        """
-        批量保存选股宝涨停详情数据
-        records: 字典列表，每个包含 code, name, concept, reason
-        """
+        """批量保存选股宝涨停详情数据"""
         count = 0
         for r in records:
             try:
                 self.execute(
-                    """INSERT OR REPLACE INTO xgb_limit_up_detail 
+                    """INSERT OR REPLACE INTO xgt_limit_up_detail 
                        (date, code, name, concept, reason)
                        VALUES (?, ?, ?, ?, ?)""",
                     (date, r["code"], r.get("name", ""),
@@ -434,15 +548,12 @@ class Database:
     def get_xgb_detail(self, date):
         """获取某日选股宝涨停详情数据"""
         return self.fetch_all(
-            "SELECT * FROM xgb_limit_up_detail WHERE date = ?", (date,))
+            "SELECT * FROM xgt_limit_up_detail WHERE date = ?", (date,))
 
     def get_xgb_concepts_by_date(self, date):
-        """
-        从xgb_limit_up_detail表聚合概念统计
-        将每只股票的概念字段（分号分隔）展开并统计
-        """
+        """从xgt_limit_up_detail表聚合概念统计"""
         rows = self.fetch_all(
-            "SELECT concept FROM xgb_limit_up_detail WHERE date = ? AND concept IS NOT NULL AND concept != ''",
+            "SELECT concept FROM xgt_limit_up_detail WHERE date = ? AND concept IS NOT NULL AND concept != ''",
             (date,))
         concept_counter = {}
         for row in rows:
@@ -461,10 +572,7 @@ class Database:
             "SELECT * FROM concept_statistics WHERE date = ? ORDER BY count DESC", (date,))
 
     def save_concept_statistics(self, records, date):
-        """
-        保存概念统计数据到concept_statistics表
-        records: 字典列表，每个包含 concept, count
-        """
+        """保存概念统计数据"""
         count = 0
         for r in records:
             try:
@@ -482,30 +590,40 @@ class Database:
 
     # ============ 砸盘系数操作 ============
     def save_smash_coefficient(self, date, coefficient, max_boards):
-        """保存砸盘系数结果"""
-        sql = """INSERT OR REPLACE INTO smash_coefficient_results 
-                 (date, smash_coefficient, max_continuous_boards)
-                 VALUES (?, ?, ?)"""
-        self.execute(sql, (date, coefficient, max_boards))
+        """保存砸盘系数结果（只写入统一表）"""
+        self.execute(
+            """INSERT OR REPLACE INTO smash_coefficients 
+               (trade_date, smash_coefficient, max_continuous_days)
+               VALUES (?, ?, ?)""",
+            (date, coefficient, max_boards))
 
     def get_smash_coefficient(self, date):
         """获取单日砸盘系数"""
+        row = self.fetch_one(
+            "SELECT * FROM smash_coefficients WHERE trade_date = ?", (date,))
+        if row:
+            return row
         return self.fetch_one(
             "SELECT * FROM smash_coefficient_results WHERE date = ?", (date,))
 
     def get_smash_coefficient_history(self, start_date=None, end_date=None, limit=30):
         """获取砸盘系数历史数据"""
-        sql = "SELECT * FROM smash_coefficient_results"
+        sql = """
+            SELECT trade_date as date, 
+                   smash_coefficient, 
+                   max_continuous_days as max_continuous_boards
+            FROM smash_coefficients
+        """
         conditions = []
         params = []
         if start_date:
-            conditions.append("date >= ?")
+            conditions.append("trade_date >= ?")
             params.append(start_date)
         if end_date:
-            conditions.append("date <= ?")
+            conditions.append("trade_date <= ?")
             params.append(end_date)
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
-        sql += " ORDER BY date DESC LIMIT ?"
+        sql += " ORDER BY trade_date DESC LIMIT ?"
         params.append(limit)
         return self.fetch_all(sql, params)
