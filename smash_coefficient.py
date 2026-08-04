@@ -26,7 +26,8 @@ class SmashCoefficientCalculator:
 
     def __init__(self, db):
         self.db = db
-        self.db_path = db.db_path if hasattr(db, 'db_path') else None
+        # 获取数据库路径（如果db对象有db_path属性）
+        self.db_path = getattr(db, 'db_path', None)
 
     def _get_limit_up_data(self, date):
         """
@@ -34,24 +35,31 @@ class SmashCoefficientCalculator:
         返回股票字典列表，包含 code, name, limit_up_days 等字段
         """
         try:
+            # 如果没有db_path，尝试从db对象获取连接
             if self.db_path is None:
-                # 尝试从 db 对象获取连接
+                # 假设db对象有conn属性
                 conn = self.db.conn
+                cursor = conn.execute(
+                    "SELECT code, name, limit_up_days FROM xgt_limit_up_detail WHERE date = ?",
+                    (date,)
+                )
+                rows = cursor.fetchall()
+                # 转换为dict列表
+                return [dict(r) for r in rows]
             else:
+                # 使用独立连接，确保关闭
                 conn = sqlite3.connect(self.db_path)
                 conn.row_factory = sqlite3.Row
-            cursor = conn.execute(
-                "SELECT code, name, limit_up_days FROM xgt_limit_up_detail WHERE date = ?",
-                (date,)
-            )
-            rows = cursor.fetchall()
-            if self.db_path is not None:
+                cursor = conn.execute(
+                    "SELECT code, name, limit_up_days FROM xgt_limit_up_detail WHERE date = ?",
+                    (date,)
+                )
+                rows = cursor.fetchall()
                 conn.close()
-            # 转换为 dict 列表
-            return [dict(r) for r in rows]
+                return [dict(r) for r in rows]
         except Exception as e:
             logger.error(f"从 xgt_limit_up_detail 获取 {date} 数据失败: {e}")
-            # 降级：尝试从 akshare_limit_up 获取
+            # 降级：尝试从 akshare_limit_up 获取（兼容旧数据）
             try:
                 stocks = self.db.get_limit_up_data(date)
                 # 确保有 limit_up_days 字段（akshare 中为 continuous_boards）
@@ -181,7 +189,7 @@ class SmashCoefficientCalculator:
             logger.error(f"单日砸盘系数计算失败({date}): {e}")
             return None, None
 
-    # ---------- 以下方法保持不变，因为趋势、信号等不依赖数据源 ----------
+    # ---------- 以下方法保持不变（趋势、信号等） ----------
     def get_trend(self, date, days=5):
         """获取砸盘系数趋势"""
         try:
@@ -203,8 +211,12 @@ class SmashCoefficientCalculator:
                         values.append({"date": d, "value": coef})
 
             if len(values) < 2:
-                return {"values": values, "trend": "数据不足", "change": 0,
-                        "analysis": "砸盘系数历史数据不足，无法判断趋势"}
+                return {
+                    "values": values,
+                    "trend": "数据不足",
+                    "change": 0,
+                    "analysis": "砸盘系数历史数据不足，无法判断趋势"
+                }
 
             first_val = values[0]["value"]
             last_val = values[-1]["value"]
