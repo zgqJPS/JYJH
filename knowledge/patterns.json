@@ -1,6 +1,6 @@
 {
-  "updated_at": "2026-07-31T15:38:02.506789",
-  "total_patterns": 229,
+  "updated_at": "2026-08-04T14:07:47.319528",
+  "total_patterns": 243,
   "by_type": {
     "board_promotion": [
       {
@@ -49,153 +49,153 @@
     "concept_rotation": [
       {
         "description": "概念发散",
-        "occurrence_count": 983,
-        "success_rate": 0.244,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
+        "occurrence_count": 880,
+        "success_rate": 0.153,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
       },
       {
         "description": "主线明确",
-        "occurrence_count": 430,
-        "success_rate": 0.244,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
+        "occurrence_count": 378,
+        "success_rate": 0.153,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
       },
       {
         "description": "概念轮动周期与接力规律",
         "occurrence_count": 116,
-        "success_rate": 0.244,
+        "success_rate": 0.153,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "核心概念矩阵TOP4",
         "occurrence_count": 66,
-        "success_rate": 0.244,
+        "success_rate": 0.153,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "概念集中度与市场表现",
         "occurrence_count": 33,
-        "success_rate": 0.244,
+        "success_rate": 0.153,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "概念固化",
         "occurrence_count": 1,
-        "success_rate": 0.244,
+        "success_rate": 0.153,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       }
     ],
     "cycle_phase": [
       {
         "description": "发酵期",
-        "occurrence_count": 902,
-        "success_rate": 0.442,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
+        "occurrence_count": 806,
+        "success_rate": 0.342,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
       },
       {
         "description": "退潮期",
-        "occurrence_count": 312,
-        "success_rate": 0.442,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
+        "occurrence_count": 284,
+        "success_rate": 0.342,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
       },
       {
         "description": "高潮期",
-        "occurrence_count": 138,
-        "success_rate": 0.442,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
+        "occurrence_count": 111,
+        "success_rate": 0.342,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
       },
       {
         "description": "启动期",
-        "occurrence_count": 62,
-        "success_rate": 0.442,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
+        "occurrence_count": 58,
+        "success_rate": 0.342,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
       },
       {
         "description": "冰点期市场特征",
         "occurrence_count": 58,
-        "success_rate": 0.442,
+        "success_rate": 0.342,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "高潮期市场特征",
         "occurrence_count": 56,
-        "success_rate": 0.442,
+        "success_rate": 0.342,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "崩塌期市场特征",
         "occurrence_count": 18,
-        "success_rate": 0.442,
+        "success_rate": 0.342,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "蓄力期市场特征",
         "occurrence_count": 17,
-        "success_rate": 0.442,
+        "success_rate": 0.342,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "冰点转蓄力转折信号",
         "occurrence_count": 5,
-        "success_rate": 0.442,
+        "success_rate": 0.342,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       }
     ],
     "low_credibility": [
       {
         "description": "seal_quality_factor连续误判42次",
-        "occurrence_count": 680,
+        "occurrence_count": 601,
         "success_rate": 0.5,
-        "last_seen": "2026-07-31",
+        "last_seen": "2026-08-04",
         "last_verified": null
       },
       {
         "description": "momentum_factor连续误判3次",
-        "occurrence_count": 65,
+        "occurrence_count": 63,
         "success_rate": 0.5,
-        "last_seen": "2026-07-31",
+        "last_seen": "2026-08-04",
         "last_verified": null
       },
       {
         "description": "continuation_factor连续误判3次",
-        "occurrence_count": 35,
+        "occurrence_count": 33,
         "success_rate": 0.5,
-        "last_seen": "2026-07-31",
+        "last_seen": "2026-08-04",
         "last_verified": null
       },
       {
         "description": "momentum_factor连续误判4次",
-        "occurrence_count": 29,
+        "occurrence_count": 24,
         "success_rate": 0.5,
-        "last_seen": "2026-07-31",
+        "last_seen": "2026-08-04",
         "last_verified": null
       },
       {
         "description": "concept_heat_factor连续误判3次",
-        "occurrence_count": 25,
+        "occurrence_count": 22,
         "success_rate": 0.5,
-        "last_seen": "2026-07-31",
+        "last_seen": "2026-08-03",
         "last_verified": null
       },
       {
         "description": "continuation_factor连续误判4次",
-        "occurrence_count": 24,
+        "occurrence_count": 22,
         "success_rate": 0.5,
-        "last_seen": "2026-07-31",
+        "last_seen": "2026-08-04",
         "last_verified": null
       },
       {
@@ -203,13 +203,6 @@
         "occurrence_count": 21,
         "success_rate": 0.5,
         "last_seen": "2026-07-30",
-        "last_verified": null
-      },
-      {
-        "description": "momentum_factor连续误判5次",
-        "occurrence_count": 18,
-        "success_rate": 0.5,
-        "last_seen": "2026-07-31",
         "last_verified": null
       },
       {
@@ -245,6 +238,13 @@
         "occurrence_count": 10,
         "success_rate": 0.5,
         "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "momentum_factor连续误判5次",
+        "occurrence_count": 10,
+        "success_rate": 0.5,
+        "last_seen": "2026-08-04",
         "last_verified": null
       },
       {
@@ -304,6 +304,13 @@
         "last_verified": null
       },
       {
+        "description": "continuation_factor连续误判7次",
+        "occurrence_count": 8,
+        "success_rate": 0.5,
+        "last_seen": "2026-08-04",
+        "last_verified": null
+      },
+      {
         "description": "breadth_factor连续误判5次",
         "occurrence_count": 7,
         "success_rate": 0.5,
@@ -311,10 +318,24 @@
         "last_verified": null
       },
       {
+        "description": "continuation_factor连续误判5次",
+        "occurrence_count": 7,
+        "success_rate": 0.5,
+        "last_seen": "2026-08-04",
+        "last_verified": null
+      },
+      {
         "description": "concept_heat_factor连续误判5次",
         "occurrence_count": 7,
         "success_rate": 0.5,
         "last_seen": "2026-07-30",
+        "last_verified": null
+      },
+      {
+        "description": "continuation_factor连续误判6次",
+        "occurrence_count": 7,
+        "success_rate": 0.5,
+        "last_seen": "2026-08-04",
         "last_verified": null
       },
       {
@@ -360,13 +381,6 @@
         "last_verified": null
       },
       {
-        "description": "continuation_factor连续误判7次",
-        "occurrence_count": 7,
-        "success_rate": 0.5,
-        "last_seen": "2026-07-30",
-        "last_verified": null
-      },
-      {
         "description": "smash_factor连续误判3次",
         "occurrence_count": 6,
         "success_rate": 0.5,
@@ -374,17 +388,17 @@
         "last_verified": null
       },
       {
-        "description": "continuation_factor连续误判5次",
+        "description": "momentum_factor连续误判6次",
         "occurrence_count": 6,
         "success_rate": 0.5,
-        "last_seen": "2026-07-30",
+        "last_seen": "2026-08-04",
         "last_verified": null
       },
       {
-        "description": "continuation_factor连续误判6次",
+        "description": "momentum_factor连续误判7次",
         "occurrence_count": 6,
         "success_rate": 0.5,
-        "last_seen": "2026-07-30",
+        "last_seen": "2026-08-04",
         "last_verified": null
       },
       {
@@ -444,17 +458,10 @@
         "last_verified": null
       },
       {
-        "description": "momentum_factor连续误判6次",
+        "description": "momentum_factor连续误判8次",
         "occurrence_count": 5,
         "success_rate": 0.5,
-        "last_seen": "2026-07-30",
-        "last_verified": null
-      },
-      {
-        "description": "momentum_factor连续误判7次",
-        "occurrence_count": 5,
-        "success_rate": 0.5,
-        "last_seen": "2026-07-30",
+        "last_seen": "2026-08-04",
         "last_verified": null
       },
       {
@@ -501,13 +508,6 @@
       },
       {
         "description": "cycle_factor连续误判11次",
-        "occurrence_count": 4,
-        "success_rate": 0.5,
-        "last_seen": "2026-07-30",
-        "last_verified": null
-      },
-      {
-        "description": "momentum_factor连续误判8次",
         "occurrence_count": 4,
         "success_rate": 0.5,
         "last_seen": "2026-07-30",
@@ -1074,416 +1074,514 @@
     "dragon": [
       {
         "description": "金 螳 螂(5板)",
-        "occurrence_count": 60,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
+        "occurrence_count": 48,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
       },
       {
         "description": "水发燃气(4板)",
-        "occurrence_count": 46,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
+        "occurrence_count": 40,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
       },
       {
         "description": "爱丽家居(8板)",
-        "occurrence_count": 42,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
+        "occurrence_count": 38,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
       },
       {
         "description": "新能泰山(3板)",
-        "occurrence_count": 32,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
+        "occurrence_count": 28,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
       },
       {
         "description": "爱丽家居(7板)",
-        "occurrence_count": 31,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "新能泰山(4板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "美诺华(5板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "神剑股份(4板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "津药药业(4板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "津药药业(5板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "津药药业(6板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "津药药业(7板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "汇源通信(4板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "汇源通信(5板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "华远控股(4板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "华远控股(6板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "圣阳股份(5板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "圣阳股份(6板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "圣阳股份(7板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "博云新材(6板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "株冶集团(4板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "金 螳 螂(4板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "水发燃气(3板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "水发燃气(5板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "飞马国际(3板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "越剑智能(4板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "永杉锂业(4板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "福达合金(4板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
-      },
-      {
-        "description": "福达合金(5板)",
-        "occurrence_count": 30,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
+        "occurrence_count": 27,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
       },
       {
         "description": "华电辽能(8板)",
         "occurrence_count": 25,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
-        "description": "爱丽家居(9板)",
-        "occurrence_count": 18,
-        "success_rate": 0.545,
-        "last_seen": "2026-07-31",
-        "last_verified": "2026-07-31"
+        "description": "美诺华(5板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "神剑股份(4板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "津药药业(4板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "津药药业(5板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "津药药业(6板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "津药药业(7板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "汇源通信(4板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "汇源通信(5板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "华远控股(4板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "华远控股(6板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "圣阳股份(5板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "圣阳股份(6板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "圣阳股份(7板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "博云新材(6板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "株冶集团(4板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "金 螳 螂(4板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "水发燃气(3板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "水发燃气(5板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "飞马国际(3板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "越剑智能(4板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "永杉锂业(4板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "福达合金(4板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "福达合金(5板)",
+        "occurrence_count": 24,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "新能泰山(4板)",
+        "occurrence_count": 23,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-03",
+        "last_verified": "2026-08-04"
       },
       {
         "description": "京投发展(3板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "杭州解百(3板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "协鑫集成(4板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "百川股份(3板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "百川股份(4板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "大位科技(4板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "掌阅科技(5板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "豫能控股(4板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "豫能控股(5板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "豫能控股(6板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "豫能控股(7板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "泰嘉股份(3板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "华盛昌(3板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "顺钠股份(2板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "顺钠股份(3板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "王力安防(4板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "王力安防(5板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "宁波建工(4板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "中南文化(4板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "中南文化(5板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "三房巷(3板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "三房巷(4板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "三房巷(5板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "深华发Ａ(4板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "深华发Ａ(5板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "华电辽能(6板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "华电辽能(7板)",
         "occurrence_count": 16,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
       },
       {
         "description": "杭电股份(4板)",
         "occurrence_count": 8,
-        "success_rate": 0.545,
+        "success_rate": 0.61,
         "last_seen": "2026-07-30",
-        "last_verified": "2026-07-31"
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "爱丽家居(9板)",
+        "occurrence_count": 7,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "传智教育(7板)",
+        "occurrence_count": 5,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "传智教育(6板)",
+        "occurrence_count": 3,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "ST龙元(3板)",
+        "occurrence_count": 2,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "哈药股份(4板)",
+        "occurrence_count": 2,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "哈药股份(5板)",
+        "occurrence_count": 2,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "艾艾精工(4板)",
+        "occurrence_count": 2,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "立新能源(3板)",
+        "occurrence_count": 2,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "立新能源(4板)",
+        "occurrence_count": 2,
+        "success_rate": 0.608,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "立新能源(5板)",
+        "occurrence_count": 2,
+        "success_rate": 0.607,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "立新能源(6板)",
+        "occurrence_count": 2,
+        "success_rate": 0.604,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "长缆科技(4板)",
+        "occurrence_count": 2,
+        "success_rate": 0.601,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "长缆科技(5板)",
+        "occurrence_count": 2,
+        "success_rate": 0.603,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "爱丽家居(6板)",
+        "occurrence_count": 2,
+        "success_rate": 0.596,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
+      },
+      {
+        "description": "亚联机械(3板)",
+        "occurrence_count": 1,
+        "success_rate": 0.61,
+        "last_seen": "2026-08-04",
+        "last_verified": "2026-08-04"
       }
     ],
     "signal_pattern": [
@@ -1556,9 +1654,9 @@
     "smash_adaptation": [
       {
         "description": "砸盘系数自适应调整: 权重=0.450, 低阈值=4.0, 高阈值=7.0",
-        "occurrence_count": 21,
+        "occurrence_count": 17,
         "success_rate": 0.5,
-        "last_seen": "2026-07-31",
+        "last_seen": "2026-08-04",
         "last_verified": null
       },
       {

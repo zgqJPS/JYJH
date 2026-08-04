@@ -1,21 +1,21 @@
 {
   "momentum_factor": {
-    "weight": 0.8555,
-    "credibility": 1.0,
-    "consecutive_misses": 1,
-    "updated_at": "2026-07-31 15:38:01.769889"
+    "weight": 0.6601,
+    "credibility": 0.35,
+    "consecutive_misses": 3,
+    "updated_at": "2026-08-04 14:07:45.826169"
   },
   "continuation_factor": {
-    "weight": 0.7318,
-    "credibility": 1.0,
-    "consecutive_misses": 1,
-    "updated_at": "2026-07-31 15:38:01.850132"
+    "weight": 0.5455,
+    "credibility": 0.5,
+    "consecutive_misses": 7,
+    "updated_at": "2026-08-04 14:07:46.818378"
   },
   "concept_heat_factor": {
     "weight": 0.05,
-    "credibility": 0.95,
+    "credibility": 1.0,
     "consecutive_misses": 1,
-    "updated_at": "2026-07-31 15:38:01.834391"
+    "updated_at": "2026-08-04 14:07:45.148891"
   },
   "seal_quality_factor": {
     "weight": 0.05,
@@ -27,13 +27,13 @@
     "weight": 0.05,
     "credibility": 1.0,
     "consecutive_misses": 1,
-    "updated_at": "2026-07-31 15:38:01.797541"
+    "updated_at": "2026-08-04 14:07:44.284235"
   },
   "dragon_factor": {
-    "weight": 0.0695,
+    "weight": 0.0533,
     "credibility": 1.0,
-    "consecutive_misses": 0,
-    "updated_at": "2026-07-31 15:38:00.811193"
+    "consecutive_misses": 1,
+    "updated_at": "2026-08-04 14:07:45.854488"
   },
   "volume_factor": {
     "weight": 0.5,
@@ -45,12 +45,12 @@
     "weight": 0.05,
     "credibility": 1.0,
     "consecutive_misses": 1,
-    "updated_at": "2026-07-31 15:37:27.866708"
+    "updated_at": "2026-08-03 16:26:33.636475"
   },
   "smash_factor": {
     "weight": 0.05,
     "credibility": 1.0,
     "consecutive_misses": 1,
-    "updated_at": "2026-07-31 15:38:01.816522"
+    "updated_at": "2026-08-04 13:47:46.078266"
   }
 }
