@@ -3,7 +3,7 @@ predictor.py - 预测引擎 (v2.0 升级版)
 基于当前市场状态、历史数据和知识库，生成多维度预测。
 每个预测附带置信度。砸盘系数作为核心预测因子，权重最高。
 统一使用 xgt_limit_up_detail 表的字段：limit_up_days, seal_ratio
-市场周期参考 CycleModel 的4阶段作为额外证据
+市场周期统一使用 SentimentStateEngine 并映射为四阶段
 """
 import logging
 import math
@@ -22,16 +22,24 @@ class SentimentStateEngine:
     基于多维观测的市场情绪周期状态识别引擎。
     将市场划分为5个隐藏状态：冰点、蓄力、发酵、高潮、崩塌
     利用砸盘系数趋势、炸板率、涨停数量等观测变量推断当前状态。
-    同时参考 CycleModel 的结果作为额外证据。
     """
 
     STATES = ['ICEPOINT', 'STARTUP', 'MAIN_RISE', 'CLIMAX', 'EBB']
-    STATE_CN = {
+    # 仅用于内部，外部显示统一用四阶段映射
+    STATE_CN_INTERNAL = {
         'ICEPOINT': '冰点期',
         'STARTUP': '蓄力期',
         'MAIN_RISE': '发酵期',
         'CLIMAX': '高潮期',
         'EBB': '崩塌期',
+    }
+    # 对外统一四阶段映射（与 smart_recommender 保持一致）
+    PHASE_MAP = {
+        'ICEPOINT': '冰点酝酿期',
+        'STARTUP': '蓄力爬升期',
+        'MAIN_RISE': '蓄力爬升期',   # 发酵期归入蓄力
+        'CLIMAX': '爆发高潮期',
+        'EBB': '崩塌退潮期',
     }
 
     TRANSITION_MATRIX = {
@@ -47,6 +55,10 @@ class SentimentStateEngine:
         self._history_cache = {}
         # 获取数据库路径
         self.db_path = getattr(db, 'db_path', None)
+
+    def get_phase_cn(self, state_eng):
+        """获取对外统一的中文四阶段名称"""
+        return self.PHASE_MAP.get(state_eng, '蓄力爬升期')
 
     def get_recent_smash_data(self, date_str, days=30):
         """获取最近N天的砸盘系数数据"""
@@ -133,19 +145,8 @@ class SentimentStateEngine:
 
     def infer_state(self, date_str):
         """
-        推断市场情绪状态 - 结合 CycleModel 结果作为额外证据
+        推断市场情绪状态 - 返回英文状态及概率
         """
-        # 先获取 CycleModel 的结果
-        cycle_phase = ''
-        try:
-            from cycle_model import CycleModel
-            cycle_model = CycleModel(self.db_path)
-            phase_result = cycle_model.detect_phase(date_str)
-            cycle_phase = phase_result.get('phase', '')
-        except Exception as e:
-            logger.warning(f"CycleModel 调用失败: {e}")
-
-        # 原有逻辑
         smash_data = self.get_recent_smash_data(date_str, days=10)
         daily_data = self.get_recent_daily_data(date_str, days=10)
 
@@ -257,19 +258,6 @@ class SentimentStateEngine:
                     scores['ICEPOINT'] += 1.5
                     evidence.append(f"最高{current_max}板→冰点信号(高度压缩)")
 
-        # ============ CycleModel 结果作为额外证据（仅使用新4阶段） ============
-        if cycle_phase:
-            phase_map = {
-                '冰点酝酿期': 'ICEPOINT',
-                '蓄力爬升期': 'STARTUP',
-                '爆发高潮期': 'CLIMAX',
-                '崩塌退潮期': 'EBB',
-            }
-            mapped = phase_map.get(cycle_phase, '')
-            if mapped:
-                scores[mapped] += 2.0
-                evidence.append(f"CycleModel 判断为 {cycle_phase} → 映射到 {mapped}")
-
         # 最终打分选择
         total_score = sum(scores.values())
         if total_score > 0:
@@ -280,7 +268,7 @@ class SentimentStateEngine:
         best_state = max(probabilities, key=probabilities.get)
         confidence = round(probabilities[best_state], 2)
 
-        logger.info(f"[{date_str}] 状态引擎推断: {self.STATE_CN.get(best_state, best_state)} "
+        logger.info(f"[{date_str}] 状态引擎推断: {self.STATE_CN_INTERNAL.get(best_state, best_state)} "
                     f"(置信度{confidence:.0%}), 证据: {'; '.join(evidence[:5])}")
 
         return {
@@ -312,6 +300,10 @@ class Predictor:
             weights[r["factor_name"]] = r["weight"]
         return weights
 
+    def _get_state_cn(self, state_eng):
+        """将英文状态转换为统一的中文四阶段名称"""
+        return self.state_engine.get_phase_cn(state_eng)
+
     def predict_next_day(self, date_str, analysis_result, pattern_result):
         if not analysis_result:
             logger.warning("无分析结果，无法生成预测")
@@ -322,7 +314,8 @@ class Predictor:
         state_info = self.state_engine.infer_state(date_str)
         current_state = state_info['state']
         state_probs = state_info['probabilities']
-        logger.info(f"[{date_str}] 情绪周期状态: {current_state} (置信度{state_info['confidence']:.0%})")
+        state_cn = self._get_state_cn(current_state)
+        logger.info(f"[{date_str}] 情绪周期状态: {state_cn} (置信度{state_info['confidence']:.0%})")
 
         history = self._get_recent_history(date_str, days=10)
         long_history = self.state_engine.get_recent_daily_data(date_str, days=30)
@@ -392,7 +385,7 @@ class Predictor:
 
     def _predict_limit_up_count(self, date_str, analysis, history, state_info, long_history):
         current_state = state_info['state']
-        state_cn = SentimentStateEngine.STATE_CN.get(current_state, current_state)
+        state_cn = self._get_state_cn(current_state)
 
         if not history:
             return {"predicted": 50, "confidence": 0.3, "range": (30, 70),
@@ -477,7 +470,7 @@ class Predictor:
 
     def _predict_max_boards(self, date_str, analysis, history, state_info):
         current_state = state_info['state']
-        state_cn = SentimentStateEngine.STATE_CN.get(current_state, current_state)
+        state_cn = self._get_state_cn(current_state)
 
         if not history:
             return {"predicted": 3, "confidence": 0.3, "reason": "数据不足"}
@@ -671,7 +664,7 @@ class Predictor:
 
     def _predict_sentiment(self, date_str, analysis, pattern, history, state_info, long_history):
         current_state = state_info['state']
-        state_cn = SentimentStateEngine.STATE_CN.get(current_state, current_state)
+        state_cn = self._get_state_cn(current_state)
         state_probs = state_info['probabilities']
 
         signals = {}
@@ -871,7 +864,7 @@ class Predictor:
 
     def _generate_advice(self, date_str, analysis, pattern, predictions, state_info, long_history):
         current_state = state_info['state']
-        state_cn = SentimentStateEngine.STATE_CN.get(current_state, current_state)
+        state_cn = self._get_state_cn(current_state)
 
         sentiment = analysis.get("sentiment_score", 50)
         basic = analysis.get("basic_stats", {})

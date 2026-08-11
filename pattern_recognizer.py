@@ -3,7 +3,7 @@ pattern_recognizer.py - 模式识别模块
 识别市场周期阶段、龙头特征、概念轮动模式、封板风格变化
 砸盘系数作为周期判断的核心参数
 统一使用 xgt_limit_up_detail 表的字段：limit_up_days, seal_ratio
-市场周期统一使用 cycle_model.py 的4阶段：冰点酝酿期、蓄力爬升期、爆发高潮期、崩塌退潮期
+市场周期统一使用 SentimentStateEngine（与 smart_recommender 一致）
 """
 import logging
 from collections import Counter, defaultdict
@@ -16,10 +16,9 @@ class PatternRecognizer:
 
     def __init__(self, db):
         self.db = db
-        from smash_coefficient import SmashCoefficientCalculator
-        from cycle_model import CycleModel
-        self.smash_calc = SmashCoefficientCalculator(db)
-        self.cycle_model = CycleModel(db.db_path if hasattr(db, 'db_path') else None)
+        # 统一使用 SentimentStateEngine
+        from predictor import SentimentStateEngine
+        self.state_engine = SentimentStateEngine(db)
 
     def recognize_all(self, date_str, analysis_result):
         """综合识别所有模式"""
@@ -41,17 +40,51 @@ class PatternRecognizer:
 
     def recognize_cycle_phase(self, date_str, analysis):
         """
-        识别市场周期阶段 - 统一使用 CycleModel
+        识别市场周期阶段 - 统一使用 SentimentStateEngine
+        返回中文阶段名称（四阶段）
         """
         try:
-            # 直接调用 CycleModel
-            result = self.cycle_model.detect_phase(date_str)
-            return result.get("phase", "")
+            state_info = self.state_engine.infer_state(date_str)
+            state_eng = state_info.get('state', 'MAIN_RISE')
+            # 映射为中文四阶段（与 smart_recommender 保持一致）
+            phase_map = {
+                'ICEPOINT': '冰点酝酿期',
+                'STARTUP': '蓄力爬升期',
+                'MAIN_RISE': '蓄力爬升期',   # 发酵期归入蓄力
+                'CLIMAX': '爆发高潮期',
+                'EBB': '崩塌退潮期',
+            }
+            phase = phase_map.get(state_eng, '蓄力爬升期')
+            logger.info(f"[周期] SentimentStateEngine 推断: {state_eng} -> {phase}")
+            return phase
         except Exception as e:
-            logger.error(f"CycleModel 调用失败: {e}")
-            # 降级：使用分析结果中的周期
+            logger.error(f"SentimentStateEngine 调用失败，降级使用砸盘系数简单判断: {e}")
+            # 降级：使用砸盘系数简单判断（与智能推荐的备用方案一致）
             smash_data = analysis.get("smash_analysis", {})
-            return smash_data.get("cycle_phase_by_smash", "")
+            smash_value = smash_data.get("smash_coefficient")
+            if smash_value is not None:
+                if smash_value >= 7.0:
+                    return '崩塌退潮期'
+                elif smash_value >= 4.5:
+                    return '爆发高潮期'
+                elif smash_value >= 3.0:
+                    return '蓄力爬升期'
+                elif smash_value >= 1.5:
+                    return '蓄力爬升期'
+                else:
+                    return '冰点酝酿期'
+            else:
+                # 若连砸盘系数都没有，根据涨停数粗略判断
+                basic = analysis.get("basic_stats", {})
+                count = basic.get("total_count", 50)
+                if count >= 80:
+                    return '爆发高潮期'
+                elif count >= 60:
+                    return '蓄力爬升期'
+                elif count >= 40:
+                    return '蓄力爬升期'
+                else:
+                    return '冰点酝酿期'
 
     def recognize_dragon(self, date_str, analysis):
         """识别龙头特征"""

@@ -3,7 +3,7 @@ market_analyzer.py - 市场分析引擎
 每日涨停统计、连板梯队、封板质量、概念热度、情绪指标计算
 砸盘系数统一从 smash_coefficients 表读取（与 smart_recommender 同源）
 统一使用 xgt_limit_up_detail 表的字段：limit_up_days, seal_ratio
-市场周期统一使用 cycle_model.py
+市场周期统一使用 SentimentStateEngine（与 smart_recommender 一致）
 """
 import logging
 from collections import defaultdict, Counter
@@ -16,8 +16,9 @@ class MarketAnalyzer:
 
     def __init__(self, db):
         self.db = db
-        from cycle_model import CycleModel
-        self.cycle_model = CycleModel(db.db_path if hasattr(db, 'db_path') else None)
+        # 不再直接使用 CycleModel，改为在 _smash_analysis 中动态导入 SentimentStateEngine
+        # 保留 db_path 引用供降级使用
+        self.db_path = getattr(db, 'db_path', None)
 
     def analyze_date(self, date_str):
         """
@@ -45,7 +46,7 @@ class MarketAnalyzer:
         return result
 
     def _smash_analysis(self, date_str):
-        """砸盘系数分析（统一从 smash_coefficients 表读取）"""
+        """砸盘系数分析（周期阶段统一使用 SentimentStateEngine）"""
         try:
             conn = self.db.conn
             cursor = conn.execute(
@@ -100,13 +101,37 @@ class MarketAnalyzer:
                 disadvantage = ""
                 trade_advice = "可重仓参与"
 
-            # 统一使用 CycleModel 获取周期阶段
+            # ========== 统一使用 SentimentStateEngine 获取周期阶段 ==========
+            cycle_phase = ""
             try:
-                phase_result = self.cycle_model.detect_phase(date_str)
-                cycle_phase = phase_result.get("phase", "")
+                from predictor import SentimentStateEngine
+                # 传入当前 db 对象（Database 实例）
+                state_engine = SentimentStateEngine(self.db)
+                state_info = state_engine.infer_state(date_str)
+                state_eng = state_info.get('state', 'MAIN_RISE')
+                # 映射为中文四阶段（与 smart_recommender 保持一致）
+                phase_map = {
+                    'ICEPOINT': '冰点酝酿期',
+                    'STARTUP': '蓄力爬升期',
+                    'MAIN_RISE': '蓄力爬升期',  # 原“发酵期”归入蓄力
+                    'CLIMAX': '爆发高潮期',
+                    'EBB': '崩塌退潮期',
+                }
+                cycle_phase = phase_map.get(state_eng, '蓄力爬升期')
+                logger.info(f"[周期] 使用 SentimentStateEngine 推断: {state_eng} -> {cycle_phase}")
             except Exception as e:
-                logger.warning(f"CycleModel 调用失败: {e}")
-                cycle_phase = ""
+                logger.warning(f"SentimentStateEngine 调用失败，降级使用 CycleModel: {e}")
+                # 降级方案：使用原有的 CycleModel
+                try:
+                    from cycle_model import CycleModel
+                    # 获取数据库路径（如果 db 对象有 db_path 属性）
+                    db_path = getattr(self.db, 'db_path', None)
+                    cycle_model = CycleModel(db_path)
+                    phase_result = cycle_model.detect_phase(date_str)
+                    cycle_phase = phase_result.get("phase", "")
+                except Exception as e2:
+                    logger.error(f"CycleModel 也失败: {e2}")
+                    cycle_phase = ""
 
             return {
                 "smash_coefficient": smash_value,
