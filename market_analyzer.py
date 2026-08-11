@@ -16,8 +16,6 @@ class MarketAnalyzer:
 
     def __init__(self, db):
         self.db = db
-        # 不再直接使用 CycleModel，改为在 _smash_analysis 中动态导入 SentimentStateEngine
-        # 保留 db_path 引用供降级使用
         self.db_path = getattr(db, 'db_path', None)
 
     def analyze_date(self, date_str):
@@ -105,15 +103,13 @@ class MarketAnalyzer:
             cycle_phase = ""
             try:
                 from predictor import SentimentStateEngine
-                # 传入当前 db 对象（Database 实例）
                 state_engine = SentimentStateEngine(self.db)
                 state_info = state_engine.infer_state(date_str)
                 state_eng = state_info.get('state', 'MAIN_RISE')
-                # 映射为中文四阶段（与 smart_recommender 保持一致）
                 phase_map = {
                     'ICEPOINT': '冰点酝酿期',
                     'STARTUP': '蓄力爬升期',
-                    'MAIN_RISE': '蓄力爬升期',  # 原“发酵期”归入蓄力
+                    'MAIN_RISE': '蓄力爬升期',
                     'CLIMAX': '爆发高潮期',
                     'EBB': '崩塌退潮期',
                 }
@@ -121,10 +117,8 @@ class MarketAnalyzer:
                 logger.info(f"[周期] 使用 SentimentStateEngine 推断: {state_eng} -> {cycle_phase}")
             except Exception as e:
                 logger.warning(f"SentimentStateEngine 调用失败，降级使用 CycleModel: {e}")
-                # 降级方案：使用原有的 CycleModel
                 try:
                     from cycle_model import CycleModel
-                    # 获取数据库路径（如果 db 对象有 db_path 属性）
                     db_path = getattr(self.db, 'db_path', None)
                     cycle_model = CycleModel(db_path)
                     phase_result = cycle_model.detect_phase(date_str)
@@ -159,8 +153,10 @@ class MarketAnalyzer:
             }
 
     def _basic_stats(self, stocks):
-        """基础统计 - 使用 limit_up_days 替代 continuous_boards"""
+        """基础统计 - 修复封单总额计算（使用 seal_amount 而非 seal_ratio）"""
         boards = [s.get("limit_up_days", 1) or 1 for s in stocks]
+        # ✅ 修复：使用 seal_amount（亿元）而非 seal_ratio（比例）
+        seal_amounts = [s.get("seal_amount", 0) or 0 for s in stocks]
         seal_ratios = [s.get("seal_ratio", 0) or 0 for s in stocks]
         turnover_rates = [s.get("turnover_rate", 0) or 0 for s in stocks]
 
@@ -168,6 +164,9 @@ class MarketAnalyzer:
         boards_2plus = sum(1 for b in boards if b >= 2)
         boards_3plus = sum(1 for b in boards if b >= 3)
         boards_5plus = sum(1 for b in boards if b >= 5)
+
+        total_seal_amount = sum(seal_amounts)      # 单位：亿元
+        avg_seal_amount = total_seal_amount / len(seal_amounts) if seal_amounts else 0
 
         return {
             "total_count": len(stocks),
@@ -177,8 +176,8 @@ class MarketAnalyzer:
             "boards_3plus": boards_3plus,
             "boards_5plus": boards_5plus,
             "board_distribution": dict(sorted(board_dist.items())),
-            "total_seal_amount": sum(seal_ratios),
-            "avg_seal_amount": sum(seal_ratios) / len(seal_ratios) if seal_ratios else 0,
+            "total_seal_amount": round(total_seal_amount, 2),   # ✅ 修复：封单总额（亿元）
+            "avg_seal_amount": round(avg_seal_amount, 2),       # ✅ 修复：平均封单额（亿元）
             "avg_turnover": sum(turnover_rates) / len(turnover_rates) if turnover_rates else 0,
         }
 
@@ -217,7 +216,7 @@ class MarketAnalyzer:
         return result
 
     def _seal_quality(self, stocks):
-        """封板质量分析 - 使用 seal_ratio 替代 seal_amount"""
+        """封板质量分析 - 使用 seal_ratio"""
         strong = []
         medium = []
         weak = []
@@ -357,8 +356,8 @@ class MarketAnalyzer:
         prev_count = len(prev_stocks)
         curr_max = max(s.get("limit_up_days", 1) or 1 for s in stocks)
         prev_max = max(s.get("limit_up_days", 1) or 1 for s in prev_stocks)
-        curr_seal = sum(s.get("seal_ratio", 0) or 0 for s in stocks)
-        prev_seal = sum(s.get("seal_ratio", 0) or 0 for s in prev_stocks)
+        curr_seal = sum(s.get("seal_amount", 0) or 0 for s in stocks)
+        prev_seal = sum(s.get("seal_amount", 0) or 0 for s in prev_stocks)
         return {
             "count_change": curr_count - prev_count,
             "count_change_pct": round((curr_count - prev_count) / prev_count * 100, 1) if prev_count else 0,
@@ -369,7 +368,7 @@ class MarketAnalyzer:
                 f"涨停数{curr_count}家(前日{prev_count}家，{'增' if curr_count >= prev_count else '减'}"
                 f"{abs(curr_count - prev_count)}家)；"
                 f"最高板{curr_max}板(前日{prev_max}板)；"
-                f"封单总额{curr_seal:.1f}(前日{prev_seal:.1f})"
+                f"封单总额{curr_seal:.1f}亿(前日{prev_seal:.1f}亿)"
             ),
         }
 
