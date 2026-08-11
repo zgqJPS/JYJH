@@ -43,6 +43,24 @@ class MarketAnalyzer:
         }
         return result
 
+    def _get_seal_amount(self, stock):
+        """
+        获取单只股票的封单额（亿元）
+        优先使用 seal_amount，若为0或空则通过 seal_ratio × flow_capital 估算
+        """
+        amount = stock.get("seal_amount", 0) or 0
+        if amount > 0:
+            return amount
+        # 尝试估算
+        ratio = stock.get("seal_ratio", 0) or 0
+        flow_cap = stock.get("flow_capital", 0) or 0
+        if ratio > 0 and flow_cap > 0:
+            estimated = ratio * flow_cap
+            # 如果估算值过小（<0.01亿）可能不准确，但仍返回
+            return round(estimated, 4)
+        # 数据缺失
+        return 0.0
+
     def _smash_analysis(self, date_str):
         """砸盘系数分析（周期阶段统一使用 SentimentStateEngine）"""
         try:
@@ -153,11 +171,8 @@ class MarketAnalyzer:
             }
 
     def _basic_stats(self, stocks):
-        """基础统计 - 修复封单总额计算（使用 seal_amount 而非 seal_ratio）"""
+        """基础统计 - 使用 _get_seal_amount 统一计算封单额"""
         boards = [s.get("limit_up_days", 1) or 1 for s in stocks]
-        # ✅ 修复：使用 seal_amount（亿元）而非 seal_ratio（比例）
-        seal_amounts = [s.get("seal_amount", 0) or 0 for s in stocks]
-        seal_ratios = [s.get("seal_ratio", 0) or 0 for s in stocks]
         turnover_rates = [s.get("turnover_rate", 0) or 0 for s in stocks]
 
         board_dist = Counter(boards)
@@ -165,8 +180,14 @@ class MarketAnalyzer:
         boards_3plus = sum(1 for b in boards if b >= 3)
         boards_5plus = sum(1 for b in boards if b >= 5)
 
-        total_seal_amount = sum(seal_amounts)      # 单位：亿元
+        # 使用辅助方法计算每只股票的封单额
+        seal_amounts = [self._get_seal_amount(s) for s in stocks]
+        total_seal_amount = sum(seal_amounts)
         avg_seal_amount = total_seal_amount / len(seal_amounts) if seal_amounts else 0
+
+        # 如果所有股票封单额都为0，发出警告
+        if total_seal_amount == 0 and len(stocks) > 0:
+            logger.warning("所有股票的封单额均为0，可能数据未获取完整，建议运行 fetch_xgb_detailed.py 补全")
 
         return {
             "total_count": len(stocks),
@@ -176,8 +197,8 @@ class MarketAnalyzer:
             "boards_3plus": boards_3plus,
             "boards_5plus": boards_5plus,
             "board_distribution": dict(sorted(board_dist.items())),
-            "total_seal_amount": round(total_seal_amount, 2),   # ✅ 修复：封单总额（亿元）
-            "avg_seal_amount": round(avg_seal_amount, 2),       # ✅ 修复：平均封单额（亿元）
+            "total_seal_amount": round(total_seal_amount, 2),
+            "avg_seal_amount": round(avg_seal_amount, 2),
             "avg_turnover": sum(turnover_rates) / len(turnover_rates) if turnover_rates else 0,
         }
 
@@ -352,12 +373,16 @@ class MarketAnalyzer:
         prev_stocks = [dict(s) for s in prev_stocks]
         if not prev_stocks:
             return {"analysis": "前日无数据"}
+
         curr_count = len(stocks)
         prev_count = len(prev_stocks)
         curr_max = max(s.get("limit_up_days", 1) or 1 for s in stocks)
         prev_max = max(s.get("limit_up_days", 1) or 1 for s in prev_stocks)
-        curr_seal = sum(s.get("seal_amount", 0) or 0 for s in stocks)
-        prev_seal = sum(s.get("seal_amount", 0) or 0 for s in prev_stocks)
+
+        # 使用统一的封单额计算
+        curr_seal = sum(self._get_seal_amount(s) for s in stocks)
+        prev_seal = sum(self._get_seal_amount(s) for s in prev_stocks)
+
         return {
             "count_change": curr_count - prev_count,
             "count_change_pct": round((curr_count - prev_count) / prev_count * 100, 1) if prev_count else 0,
