@@ -300,10 +300,7 @@ def _run_fetch_task(task_id, params):
                     tasks[task_id]["status"] = "completed"
                     predict_msg = f"（预测{target_date}）" if target_date else ""
                     tasks[task_id]["message"] = f"数据获取成功，基于{data_date}生成{len(rec_serialized)}只个股预测{predict_msg}"
-                try:
-                    send_recommend_notification(data_date, rec_serialized, market_state, next_day)
-                except:
-                    pass
+                # 已移除手动任务中的微信通知发送
             else:
                 with tasks_lock:
                     tasks[task_id]["progress"] = 100
@@ -437,10 +434,7 @@ def _run_recommend_task(task_id, params):
                     "overall_strategy": next_day.get("overall_strategy", ""),
                 },
             }
-        try:
-            send_recommend_notification(data_date, rec_serialized, market_state, next_day)
-        except:
-            pass
+        # 已移除手动任务中的微信通知发送
     except Exception as e:
         logger.error(f"推荐任务异常: {e}", exc_info=True)
         with tasks_lock:
@@ -1074,6 +1068,93 @@ def handle_exit_signals(params):
         return {"success": False, "error": str(e)}
 
 
+# ============ 量化策略 API ============
+
+def handle_quant_signals():
+    """获取量化策略信号"""
+    try:
+        from quant_strategy import QuantStrategyEngine
+        db = Database(DB_PATH)
+        all_dates = db.get_all_dates()
+        latest_date = all_dates[-1] if all_dates else None
+        db.close()
+        if not latest_date:
+            return {"success": False, "error": "无交易日数据"}
+        engine = QuantStrategyEngine(DB_PATH)
+        result = engine.generate_signals(latest_date)
+        engine.close()
+        return {"success": True, "data": result}
+    except Exception as e:
+        logger.error(f"量化信号生成失败: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+def handle_quant_backtest(body):
+    """执行量化策略回测"""
+    try:
+        from quant_strategy import QuantStrategyEngine, QuantBacktester
+        data = json.loads(body) if body else {}
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        init_cash = data.get('init_cash', 1000000)
+        if not start_date:
+            from datetime import timedelta
+            start_date = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+        if not end_date:
+            end_date = datetime.now().strftime('%Y-%m-%d')
+        engine = QuantStrategyEngine(DB_PATH)
+        backtester = QuantBacktester(engine)
+        result = backtester.run(start_date, end_date, init_cash)
+        engine.close()
+        return {"success": True, "data": result}
+    except Exception as e:
+        logger.error(f"量化回测失败: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+def handle_trade_order(body):
+    """执行交易指令"""
+    try:
+        from trading_executor import TradingExecutor, TradingChannel
+        data = json.loads(body) if body else {}
+        channel_name = os.environ.get('TRADING_CHANNEL', 'simulate')
+        channel_map = {
+            'qmt': TradingChannel.QMT,
+            'ths_http': TradingChannel.THS_HTTP,
+            'simulate': TradingChannel.SIMULATE
+        }
+        executor = TradingExecutor(
+            channel=channel_map.get(channel_name, TradingChannel.SIMULATE),
+            config={
+                'miniqmt_path': os.environ.get('QMT_PATH', ''),
+                'account': os.environ.get('QMT_ACCOUNT', ''),
+                'ths_http_url': os.environ.get('THS_HTTP_URL', 'http://localhost:5000')
+            }
+        )
+        action = data.get('action')
+        code = data.get('code')
+        price = data.get('price', 0)
+        amount = data.get('amount', 0)
+        if action == 'buy':
+            result = executor.buy(code, price, amount)
+        elif action == 'sell':
+            result = executor.sell(code, price, amount)
+        else:
+            return {"success": False, "error": "无效操作"}
+        return {
+            "success": result.success,
+            "data": {
+                "order_id": result.order_id,
+                "message": result.message,
+                "price": result.price,
+                "amount": result.amount
+            }
+        }
+    except Exception as e:
+        logger.error(f"交易执行失败: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 # ============ HTTP 请求处理器 ============
 
 class RequestHandler(SimpleHTTPRequestHandler):
@@ -1114,6 +1195,8 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self._json_response(handle_modules_status())
             elif path == "/api/exit-signals":
                 self._json_response(handle_exit_signals(params))
+            elif path == "/api/quant/signals":
+                self._json_response(handle_quant_signals())
             elif path == "/" or path == "/index.html":
                 self._serve_file(os.path.join(TEMPLATE_DIR, "index.html"), "text/html")
             elif path.startswith("/static/"):
@@ -1146,6 +1229,10 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self._json_response(handle_start_auto_upgrade(body))
             elif path == "/api/simulate":
                 self._json_response(handle_start_simulate(body))
+            elif path == "/api/quant/backtest":
+                self._json_response(handle_quant_backtest(body))
+            elif path == "/api/trade/order":
+                self._json_response(handle_trade_order(body))
             else:
                 self.send_error(404)
         except Exception as e:
@@ -1297,10 +1384,15 @@ def main():
     except Exception as e:
         print(f"[WARN] 数据库初始化失败: {e}")
 
+    # 交易日定时任务：多个时间点
     try:
-        schedule.every().day.at("15:00").do(scheduled_fetch_and_recommend)
+        schedule.every().day.at("09:25").do(scheduled_fetch_and_recommend)
+        schedule.every().day.at("09:46").do(scheduled_fetch_and_recommend)
+        schedule.every().day.at("11:30").do(scheduled_fetch_and_recommend)
+        schedule.every().day.at("14:30").do(scheduled_fetch_and_recommend)
+        schedule.every().day.at("15:01").do(scheduled_fetch_and_recommend)
         threading.Thread(target=run_scheduler, daemon=True).start()
-        print("[SCHEDULE] 每日15:00自动获取数据并推荐已启用")
+        print("[SCHEDULE] 交易日定时任务已启用: 9:25, 9:46, 11:30, 14:30, 15:01")
     except Exception as e:
         print(f"[WARN] 定时任务设置失败: {e}")
 
