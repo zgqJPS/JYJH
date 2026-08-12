@@ -17,6 +17,10 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
 
+# 强制时区为北京时间（解决 Railway 等环境 UTC 问题）
+os.environ['TZ'] = 'Asia/Shanghai'
+time.tzset()
+
 # 确保项目路径在 sys.path
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_DIR)
@@ -1369,6 +1373,8 @@ class ReuseHTTPServer(HTTPServer):
 def main():
     print("=" * 70)
     print("[*] 市场分析系统 V6 (增强部署版)")
+    # 打印当前服务器时间用于调试
+    print(f"[TIME] 当前服务器时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S %Z')}")
     print("=" * 70)
 
     create_templates()
