@@ -2,6 +2,7 @@
 // 修复：推荐列表 confidence_level/confidence_name/condition_match 为空导致页面空白
 // 额外保护：renderRadarChart 空数组保护
 // 新增：模拟交易功能
+// 新增：量化策略功能
 
 // ============ Tab 切换 ============
 document.querySelectorAll('.nav-link[data-tab]').forEach(link => {
@@ -60,7 +61,8 @@ async function postJSON(url, data) {
 }
 
 // ============ 仪表盘 ============
-let smashChartInstance = null;
+let smashChartInstance = null;       // ECharts 实例（砸盘×连板双轴图）
+let turningPointsData = null;
 
 async function loadDashboard() {
     try {
@@ -81,22 +83,322 @@ async function loadDashboard() {
         document.getElementById('trade-advice').textContent = advice;
         document.getElementById('cycle-phase').textContent = summary.cycle_phase || '未知';
         document.getElementById('smash-signal').textContent = summary.smash_signal || '--';
-        renderSmashChart(data.smash_chart || []);
+        turningPointsData = data.turning_points || null;
+        renderSmashChart(data.smash_chart || [], turningPointsData);
+        renderTurningPointPanel(turningPointsData);
         renderPredictions(data.predictions || [], 'prediction-cards');
     } catch (e) { console.error('Dashboard load error:', e); }
 }
 
-function renderSmashChart(chartData) {
-    const ctx = document.getElementById('smashChart');
-    if (smashChartInstance) smashChartInstance.destroy();
+// 变盘节点类型 → 颜色/图标
+const TP_STYLE = {
+    bottom:   { color: '#0ecb81', icon: '🌱', label: '冰点见底' },
+    breakout: { color: '#00b8d9', icon: '🚀', label: '突破加速' },
+    top:      { color: '#f6465d', icon: '⚠️', label: '高潮见顶' }
+};
+
+function renderSmashChart(chartData, tpData) {
+    // ECharts 双轴图：左轴砸盘系数（线），右轴最高连板（柱），叠加变盘节点 + 龙头诞生
+    const dom = document.getElementById('smashChart');
+    if (!dom) return;
+    if (smashChartInstance) {
+        smashChartInstance.dispose();
+        smashChartInstance = null;
+    }
+    smashChartInstance = echarts.init(dom, null, { renderer: 'canvas' });
+
     const labels = chartData.map(d => d.date);
-    const values = chartData.map(d => d.value);
-    const colors = values.map(v => { if (v < 3) return '#0ecb81'; if (v <= 5) return '#fcd535'; return '#f6465d'; });
-    smashChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: { labels, datasets: [{ label: '砸盘系数', data: values, borderColor: '#f0b90b', backgroundColor: 'rgba(240,185,11,0.1)', pointBackgroundColor: colors, pointRadius: 6, pointHoverRadius: 8, tension: 0.3, fill: true, borderWidth: 2 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { afterLabel: (ctx) => { const item = chartData[ctx.dataIndex]; return item ? `最高连板: ${item.max_boards || '--'}` : ''; } } } }, scales: { x: { ticks: { color: '#9ca3af', maxRotation: 45 }, grid: { color: 'rgba(45,55,72,0.3)' } }, y: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(45,55,72,0.3)' } } } }
+    const scData = chartData.map(d => d.value);
+    const boardData = chartData.map(d => d.max_boards);
+
+    // 按砸盘区间给点着色
+    const scPoints = chartData.map(d => ({
+        value: d.value,
+        itemStyle: {
+            color: d.value == null ? '#666'
+                 : d.value < 3 ? '#0ecb81'
+                 : d.value <= 5 ? '#fcd535'
+                 : '#f6465d'
+        }
+    }));
+
+    const signalMap = {};
+    const birthSet = new Set();
+    if (tpData) {
+        (tpData.turning_points || []).forEach(tp => {
+            if (!signalMap[tp.date]) signalMap[tp.date] = [];
+            signalMap[tp.date].push(tp);
+        });
+        (tpData.dragon_birth_nodes || []).forEach(n => birthSet.add(n.date));
+    }
+
+    // markPoint：变盘节点（强信号）+ 龙头诞生（⭐ 金星）
+    const marks = [];
+    if (tpData) {
+        (tpData.turning_points || []).forEach(tp => {
+            if (tp.severity !== 'strong') return;
+            const idx = labels.indexOf(tp.date);
+            if (idx < 0) return;
+            const colorMap = { bottom: '#0ecb81', breakout: '#00b8d9', top: '#f6465d' };
+            const iconMap = { bottom: 'triangle', breakout: 'diamond', top: 'pin' };
+            const labelMap = { bottom: '🌱', breakout: '🚀', top: '⚠️' };
+            marks.push({
+                name: tp.name,
+                coord: [tp.date, scData[idx]],
+                value: labelMap[tp.type] || '•',
+                symbol: iconMap[tp.type] || 'circle',
+                symbolSize: 24,
+                itemStyle: { color: colorMap[tp.type] || '#999' },
+                label: { show: true, fontSize: 11, color: '#fff' }
+            });
+        });
+        (tpData.dragon_birth_nodes || []).forEach(n => {
+            const idx = labels.indexOf(n.date);
+            if (idx < 0) return;
+            marks.push({
+                name: '⭐' + n.dragon.name,
+                coord: [n.date, scData[idx]],
+                value: '⭐',
+                symbol: 'path://M512 0l126.3 389.1 409.4-0.1-331.2 240.6 126.5 389.1L512 778.1 208.9 1018.7l126.5-389.1L4.3 389l409.4 0.1z',
+                symbolSize: 42,
+                symbolRotate: 0,
+                itemStyle: { color: '#ffd700', borderColor: '#fff', borderWidth: 2 },
+                label: { show: false }
+            });
+        });
+    }
+
+    smashChartInstance.setOption({
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(15,23,42,0.96)',
+            borderColor: '#f0b90b',
+            borderWidth: 1,
+            textStyle: { color: '#e5e7eb', fontSize: 12 },
+            formatter: function (params) {
+                if (!params || !params.length) return '';
+                const idx = params[0].dataIndex;
+                const d = labels[idx];
+                const series = (tpData && tpData.series) ? tpData.series[idx] : null;
+                let html = `<div style="font-weight:700;color:#f0b90b;margin-bottom:6px;">${d}${series ? ' · ' + series.phase : ''}</div>`;
+                params.forEach(p => {
+                    html += `<div>${p.marker} ${p.seriesName}: <b>${p.value}</b></div>`;
+                });
+                const sigs = signalMap[d];
+                if (sigs && sigs.length) {
+                    html += '<div style="margin-top:6px;border-top:1px solid rgba(255,255,255,0.1);padding-top:6px;">';
+                    sigs.forEach(s => {
+                        const c = s.type === 'bottom' ? '#0ecb81' : s.type === 'breakout' ? '#00b8d9' : '#f6465d';
+                        html += `<div style="color:${c};">[${s.severity === 'strong' ? '强' : '中'}] ${s.name}</div>`;
+                        html += `<div style="color:#94a3b8;font-size:11px;margin-bottom:4px;">${s.detail}</div>`;
+                    });
+                    html += '</div>';
+                }
+                if (series && series.dragon) {
+                    const dd = series.dragon;
+                    html += `<div style="margin-top:4px;color:#ffd700;">🏆 ${dd.name}(${dd.code}) ${dd.level}级${dd.score}分 ${dd.boards}板</div>`;
+                }
+                if (birthSet.has(d)) {
+                    const node = (tpData.dragon_birth_nodes || []).find(x => x.date === d);
+                    if (node) {
+                        html += `<div style="margin-top:4px;color:#ffd700;font-weight:700;">⭐ 新总龙头诞生：${node.trigger}</div>`;
+                    }
+                }
+                return html;
+            }
+        },
+        legend: {
+            data: ['砸盘系数', '最高连板'],
+            textStyle: { color: '#cbd5e1' },
+            top: 0
+        },
+        grid: { left: 60, right: 60, top: 40, bottom: 70 },
+        xAxis: {
+            type: 'category',
+            data: labels,
+            axisLine: { lineStyle: { color: '#334155' } },
+            axisLabel: { color: '#94a3b8', rotate: 45, fontSize: 11 }
+        },
+        yAxis: [
+            {
+                type: 'value',
+                name: '砸盘系数',
+                nameTextStyle: { color: '#f0b90b' },
+                min: 0, max: 10,
+                axisLine: { lineStyle: { color: '#f0b90b' } },
+                axisLabel: { color: '#f0b90b' },
+                splitLine: { lineStyle: { color: 'rgba(240,185,11,0.08)' } }
+            },
+            {
+                type: 'value',
+                name: '最高连板(板)',
+                nameTextStyle: { color: '#00b8d9' },
+                min: 0, max: 12, interval: 1,
+                axisLine: { lineStyle: { color: '#00b8d9' } },
+                axisLabel: { color: '#00b8d9' },
+                splitLine: { show: false }
+            }
+        ],
+        series: [
+            {
+                name: '最高连板',
+                type: 'bar',
+                yAxisIndex: 1,
+                data: boardData,
+                itemStyle: {
+                    color: 'rgba(0,184,217,0.30)',
+                    borderColor: 'rgba(0,184,217,0.85)',
+                    borderWidth: 1
+                },
+                barWidth: '50%',
+                z: 1
+            },
+            {
+                name: '砸盘系数',
+                type: 'line',
+                yAxisIndex: 0,
+                data: scPoints,
+                smooth: true,
+                symbol: 'circle',
+                symbolSize: 9,
+                lineStyle: { color: '#f0b90b', width: 2.5 },
+                areaStyle: {
+                    color: {
+                        type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                        colorStops: [
+                            { offset: 0, color: 'rgba(240,185,11,0.35)' },
+                            { offset: 1, color: 'rgba(240,185,11,0.02)' }
+                        ]
+                    }
+                },
+                markPoint: { data: marks, label: { fontSize: 12 } },
+                z: 3
+            }
+        ]
     });
+
+    window.addEventListener('resize', () => {
+        if (smashChartInstance) smashChartInstance.resize();
+    });
+}
+
+// 变盘节点 & 龙头诞生下面板（与独立 HTML 预览一致：统计胶囊 + 诞生卡片 + 节点明细）
+function renderTurningPointPanel(tpData) {
+    const panelId = 'turning-point-panel';
+    let panel = document.getElementById(panelId);
+    if (!panel) {
+        const chartDom = document.getElementById('smashChart');
+        if (!chartDom) return;
+        // ECharts 容器是 div，向上找 .card / .chart-card 作为插入锚点
+        const hostCard = chartDom.closest('.card, .chart-card') || chartDom.parentElement;
+        panel = document.createElement('div');
+        panel.id = panelId;
+        panel.style.marginTop = '16px';
+        hostCard.appendChild(panel);
+    }
+    if (!tpData || !tpData.series) {
+        panel.innerHTML = '';
+        return;
+    }
+
+    const recent = (tpData.turning_points || []).slice().reverse().slice(0, 12);
+    const births = (tpData.dragon_birth_nodes || []).slice().reverse().slice(0, 8);
+    const s = tpData.summary || {};
+
+    const phaseColor = {
+        '冰点酝酿': '#0ecb81', '蓄力爬升': '#84cc16',
+        '上升博弈': '#fcd535', '爆发高潮': '#f6465d',
+        '崩塌退潮': '#a855f7', '震荡分化': '#9ca3af'
+    }[s.current_phase] || '#9ca3af';
+
+    const latestScColor = s.latest_sc < 3 ? '#0ecb81' : s.latest_sc <= 5 ? '#fcd535' : '#f6465d';
+
+    let html = `
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+                分析区间：<b style="color:#f0b90b;">${s.start_date || '--'}</b>
+                <span style="color:#64748b;"> ~ </span><b style="color:#f0b90b;">${s.end_date || '--'}</b>
+            </span>
+            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+                交易日：<b style="color:#00b8d9;">${s.days ?? 0}</b>
+            </span>
+            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+                最新砸盘：<b style="color:${latestScColor};">${s.latest_sc ?? '--'}</b>
+            </span>
+            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+                最新最高板：<b style="color:#00b8d9;">${s.latest_max_boards ?? '--'}板</b>
+            </span>
+            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+                变盘节点：<b style="color:#f0b90b;">${s.turning_point_count ?? 0}</b>
+            </span>
+            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+                总龙头诞生：<b style="color:#ffd700;">${s.dragon_birth_count ?? 0}</b>
+            </span>
+            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+                当前周期：<b style="color:${phaseColor};">${s.current_phase || '--'}</b>
+            </span>
+        </div>`;
+
+    if (births.length) {
+        html += `<div style="color:#ffd700;font-weight:600;margin:6px 0 8px;font-size:0.95rem;">⭐ 总龙头诞生节点（命中后自动微信推送）</div>`;
+        html += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:14px;">`;
+        births.forEach(n => {
+            const d = n.dragon;
+            const lvlCls = ({ SS: 'background:#f6465d;color:#fff;', S: 'background:#f0b90b;color:#0b1020;', A: 'background:#00b8d9;color:#fff;', B: 'background:#64748b;color:#fff;' })[d.level] || 'background:#64748b;color:#fff;';
+            html += `<div style="background:linear-gradient(90deg,rgba(255,215,0,0.10),rgba(255,215,0,0.02));border-left:4px solid #ffd700;border-radius:10px;padding:12px 14px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                    <span style="color:#ffd700;font-weight:700;font-size:0.92rem;">${n.date}</span>
+                    <span style="padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:700;${lvlCls}">${d.level}级 · ${d.score}分</span>
+                </div>
+                <div style="font-size:1.02rem;font-weight:600;color:#fff;">${d.name} <span style="color:#94a3b8;font-size:0.82rem;font-weight:400;">${d.code}</span></div>
+                <div style="color:#94a3b8;font-size:0.82rem;line-height:1.6;margin-top:2px;">
+                    ${d.boards}板 · ${d.lifecycle} · 概念：${d.concept || '--'}<br>
+                    大盘：${n.phase} · 砸盘${n.sc} · 最高${n.max_boards}板
+                </div>
+                <div style="color:#84cc16;font-size:0.82rem;margin-top:6px;">🎯 ${n.trigger}</div>
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    if (recent.length) {
+        html += `<div style="color:#e5e7eb;font-weight:600;margin:10px 0 6px;font-size:0.95rem;">📊 近期变盘节点明细（空仓信号将通过微信提醒）</div>`;
+        html += `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.84rem;color:#cbd5e1;">
+            <thead><tr style="background:#1e293b;">
+                <th style="padding:8px 10px;text-align:left;color:#f0b90b;">日期</th>
+                <th style="padding:8px 10px;text-align:left;color:#f0b90b;">类型</th>
+                <th style="padding:8px 10px;text-align:left;color:#f0b90b;">强度</th>
+                <th style="padding:8px 10px;text-align:left;color:#f0b90b;">信号</th>
+                <th style="padding:8px 10px;text-align:left;color:#f0b90b;">细节</th>
+                <th style="padding:8px 10px;text-align:left;color:#f0b90b;">当日龙头</th>
+            </tr></thead><tbody>`;
+        recent.forEach(tp => {
+            const typeMap = {
+                bottom: ['🌱 冰点见底', 'rgba(14,203,129,0.2)', '#0ecb81'],
+                breakout: ['🚀 突破加速', 'rgba(0,184,217,0.2)', '#00b8d9'],
+                top: ['⚠️ 见顶空仓', 'rgba(246,70,93,0.2)', '#f6465d']
+            };
+            const [typeLabel, bg, fg] = typeMap[tp.type] || ['--', 'transparent', '#999'];
+            const sevLabel = tp.severity === 'strong' ? '强信号' : '中信号';
+            const sevBg = tp.severity === 'strong' ? 'rgba(240,185,11,0.2)' : 'rgba(100,116,139,0.3)';
+            const sevFg = tp.severity === 'strong' ? '#f0b90b' : '#cbd5e1';
+            const dragonCell = tp.dragon_name
+                ? `<span style="color:#f0b90b;">🏆 ${tp.dragon_name}</span> <span style="color:#64748b;">(${tp.dragon_level})</span>`
+                : (tp.type === 'top' ? '<span style="color:#f6465d;">建议空仓</span>' : '--');
+            html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+                <td style="padding:8px 10px;color:#94a3b8;white-space:nowrap;">${tp.date}</td>
+                <td style="padding:8px 10px;"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:600;background:${bg};color:${fg};">${typeLabel}</span></td>
+                <td style="padding:8px 10px;"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:600;background:${sevBg};color:${sevFg};">${sevLabel}</span></td>
+                <td style="padding:8px 10px;color:#e5e7eb;font-weight:600;">${tp.name}</td>
+                <td style="padding:8px 10px;color:#94a3b8;">${tp.detail}</td>
+                <td style="padding:8px 10px;white-space:nowrap;">${dragonCell}</td>
+            </tr>`;
+        });
+        html += `</tbody></table></div>`;
+    }
+
+    panel.innerHTML = html;
 }
 
 function renderPredictions(predictions, containerId) {
@@ -1032,6 +1334,138 @@ function renderNetChart(netValues) {
             }
         }
     });
+}
+
+// ============ 量化策略 ============
+let quantConfigVisible = false;
+
+function toggleQuantConfig() {
+    quantConfigVisible = !quantConfigVisible;
+    document.getElementById('quant-config').style.display = quantConfigVisible ? 'block' : 'none';
+}
+
+async function runQuantSignals() {
+    const btn = document.getElementById('btn-quant-signals');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 生成中...';
+    try {
+        const resp = await fetchJSON('/api/quant/signals');
+        if (!resp.success) throw new Error(resp.error || '获取信号失败');
+        showQuantSignals(resp.data);
+    } catch (e) {
+        alert('生成信号失败: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-play-fill"></i> 生成今日信号';
+    }
+}
+
+function showQuantSignals(data) {
+    document.getElementById('quant-results').style.display = 'block';
+    const market = data.market || {};
+    document.getElementById('quant-market-state').innerHTML = `
+        <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center">
+            <div class="card-label">周期阶段</div>
+            <div class="card-value" style="font-size:1.2rem;color:${market.cycle_phase === '爆发高潮期' ? 'var(--gold)' : market.cycle_phase === '崩塌退潮期' ? 'var(--red)' : 'var(--text-primary)'}">${market.cycle_phase || '--'}</div>
+        </div></div></div>
+        <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center">
+            <div class="card-label">砸盘系数</div>
+            <div class="card-value ${getSmashColor(market.smash_coefficient)}">${formatNumber(market.smash_coefficient)}</div>
+        </div></div></div>
+        <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center">
+            <div class="card-label">炸板率</div>
+            <div class="card-value">${formatPercent(market.explosion_rate)}</div>
+        </div></div></div>
+        <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center">
+            <div class="card-label">涨停数</div>
+            <div class="card-value">${market.limit_up_count}</div>
+        </div></div></div>
+    `;
+
+    const buySignals = data.buy_signals || [];
+    const buyContainer = document.getElementById('quant-buy-signals');
+    if (buySignals.length === 0) {
+        buyContainer.innerHTML = '<div style="color:#9ca3af;padding:20px;text-align:center">当前无符合条件的买入信号</div>';
+    } else {
+        buyContainer.innerHTML = buySignals.map(s => `
+            <div class="rec-stock-card" style="border-left-color:${s.grade === 'S' ? 'var(--gold)' : 'var(--green)'}">
+                <div class="rec-stock-header">
+                    <div>
+                        <span class="rec-stock-name">${s.name}</span>
+                        <span class="rec-stock-code">${s.code}</span>
+                        <span class="rec-stock-tag" style="background:${s.grade === 'S' ? 'rgba(240,185,11,0.2)' : 'rgba(14,203,129,0.2)'};color:${s.grade === 'S' ? 'var(--gold)' : 'var(--green)'}">${s.grade}级</span>
+                    </div>
+                    <div class="rec-stock-score">${s.position_pct.toFixed(0)}%</div>
+                </div>
+                <div class="rec-stock-meta">
+                    <span class="rec-stock-tag">价格 ${s.price.toFixed(2)}</span>
+                    <span class="rec-stock-tag action">置信度 ${(s.confidence * 100).toFixed(0)}%</span>
+                </div>
+                <div class="rec-stock-reason">✅ ${s.reasons.join('；')}</div>
+                ${s.risk_warnings && s.risk_warnings.length > 0 ? `<div class="rec-stock-risks">⚠️ ${s.risk_warnings.join('；')}</div>` : ''}
+            </div>
+        `).join('');
+    }
+
+    const sellSignals = data.sell_signals || [];
+    const sellContainer = document.getElementById('quant-sell-signals');
+    if (sellSignals.length === 0) {
+        sellContainer.innerHTML = '<div style="color:#9ca3af;padding:20px;text-align:center">当前无卖出信号</div>';
+    } else {
+        sellContainer.innerHTML = sellSignals.map(s => `
+            <div class="rec-stock-card" style="border-left-color:var(--red)">
+                <div class="rec-stock-header">
+                    <div>
+                        <span class="rec-stock-name" style="color:var(--red)">${s.name}</span>
+                        <span class="rec-stock-code">${s.code}</span>
+                        <span class="rec-stock-tag" style="background:rgba(246,70,93,0.2);color:var(--red)">${s.grade}级</span>
+                    </div>
+                    <div class="rec-stock-score" style="color:var(--red)">${s.price.toFixed(2)}</div>
+                </div>
+                <div class="rec-stock-reason" style="color:#f6465d">🔴 ${s.reasons.join('；')}</div>
+            </div>
+        `).join('');
+    }
+}
+
+async function runQuantBacktest() {
+    const btn = document.querySelector('#tab-quant .btn-outline-light');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 回测中...';
+    const cash = (parseFloat(document.getElementById('q-backtest-cash').value) || 100) * 10000;
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 90);
+    try {
+        const resp = await postJSON('/api/quant/backtest', {
+            start_date: start.toISOString().split('T')[0],
+            end_date: end.toISOString().split('T')[0],
+            init_cash: cash
+        });
+        if (!resp.success) throw new Error(resp.error || '回测失败');
+        showQuantBacktest(resp.data);
+    } catch (e) {
+        alert('回测失败: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-clock-history"></i> 运行回测';
+    }
+}
+
+function showQuantBacktest(data) {
+    const container = document.getElementById('quant-backtest-results');
+    const tr = data.total_return || 0;
+    const dd = data.max_drawdown || 0;
+    const wr = data.win_rate || 0;
+    container.innerHTML = `
+        <div class="row g-2">
+            <div class="col-6 col-md-3"><div class="card-label">累计收益</div><div class="card-value" style="color:${tr >= 0 ? 'var(--green)' : 'var(--red)'}">${(tr * 100).toFixed(2)}%</div></div>
+            <div class="col-6 col-md-3"><div class="card-label">最大回撤</div><div class="card-value" style="color:var(--red)">${(dd * 100).toFixed(2)}%</div></div>
+            <div class="col-6 col-md-3"><div class="card-label">胜率</div><div class="card-value">${(wr * 100).toFixed(1)}%</div></div>
+            <div class="col-6 col-md-3"><div class="card-label">交易次数</div><div class="card-value">${data.total_trades || 0}</div></div>
+        </div>
+        <div style="margin-top:10px;font-size:0.8rem;color:#9ca3af">回测区间 ${data.start_date} ~ ${data.end_date}</div>
+    `;
 }
 
 // ============ 初始化 ============
