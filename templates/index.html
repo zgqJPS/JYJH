@@ -3,19 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Market Advisor V4 - 智能分析系统</title>
+    <title>Market Advisor · 自适应市场分析系统</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@9.0.0/marked.min.js"></script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <!-- 导航栏 -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-nav px-3">
         <div class="container-fluid">
             <a class="navbar-brand fw-bold" href="#">
-                <i class="bi bi-graph-up-arrow text-gold"></i> Market Advisor <span class="version-badge">V4</span>
+                <i class="bi bi-graph-up-arrow text-gold"></i> Market Advisor
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navContent">
                 <span class="navbar-toggler-icon"></span>
@@ -24,502 +24,402 @@
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item"><a class="nav-link active" href="#" data-tab="dashboard"><i class="bi bi-speedometer2"></i> 仪表盘</a></li>
                     <li class="nav-item"><a class="nav-link" href="#" data-tab="daily"><i class="bi bi-calendar-check"></i> 每日分析</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#" data-tab="recommend"><i class="bi bi-stars"></i> 智能推荐</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#" data-tab="track"><i class="bi bi-bullseye"></i> 实盘跟踪</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#" data-tab="simulate"><i class="bi bi-cash-coin"></i> 模拟交易</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#" data-tab="signals"><i class="bi bi-broadcast"></i> 信号监控</a></li>
                     <li class="nav-item"><a class="nav-link" href="#" data-tab="backtest"><i class="bi bi-clock-history"></i> 回测</a></li>
                     <li class="nav-item"><a class="nav-link" href="#" data-tab="reports"><i class="bi bi-file-earmark-text"></i> 报告</a></li>
-                    <li class="nav-item"><a class="nav-link" href="#" data-tab="health"><i class="bi bi-heart-pulse"></i> 模型健康度</a></li>
-                    <li class="nav-item nav-new"><a class="nav-link" href="#" data-tab="recommend"><i class="bi bi-brain"></i> 智能推荐</a></li>
-                    <li class="nav-item nav-new"><a class="nav-link" href="#" data-tab="tracker"><i class="bi bi-bullseye"></i> 实盘跟踪</a></li>
-                    <li class="nav-item nav-new"><a class="nav-link" href="#" data-tab="upgrade"><i class="bi bi-arrow-repeat"></i> 自适应升级</a></li>
-                    <li class="nav-item nav-new"><a class="nav-link" href="#" data-tab="signals"><i class="bi bi-broadcast"></i> 信号监控</a></li>
-                    <li class="nav-item nav-new"><a class="nav-link" href="#" data-tab="simulate"><i class="bi bi-graph-up"></i> 模拟交易</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#" data-tab="health"><i class="bi bi-heart-pulse"></i> 模型健康</a></li>
                 </ul>
             </div>
         </div>
     </nav>
 
-    <!-- 主内容区 -->
     <div class="container-fluid main-content">
-        <!-- 仪表盘 -->
+
+        <!-- ========== 仪表盘 ========== -->
         <div id="tab-dashboard" class="tab-content active">
-            <div class="row mb-4">
+            <div class="row mb-3">
                 <div class="col-12">
                     <h4 class="text-light mb-0"><i class="bi bi-speedometer2 text-gold"></i> 市场概览</h4>
                     <small class="text-muted" id="dashboard-date">加载中...</small>
                 </div>
             </div>
-            <div class="row g-3 mb-4" id="dashboard-cards">
+            <div class="row g-3 mb-3">
                 <div class="col-6 col-md-4 col-xl"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">涨停数</div><div class="card-value" id="card-limit-up">--</div></div></div></div>
                 <div class="col-6 col-md-4 col-xl"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">最高连板</div><div class="card-value" id="card-max-board">--</div></div></div></div>
                 <div class="col-6 col-md-4 col-xl"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">砸盘系数</div><div class="card-value smash-value" id="card-smash">--</div></div></div></div>
                 <div class="col-6 col-md-4 col-xl"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">情绪得分</div><div class="card-value" id="card-sentiment">--</div></div></div></div>
                 <div class="col-6 col-md-4 col-xl"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">封单总额(亿)</div><div class="card-value" id="card-seal">--</div></div></div></div>
             </div>
-            <div class="row g-3 mb-4">
-                <div class="col-md-6"><div class="card card-dark h-100"><div class="card-body"><h6 class="text-gold"><i class="bi bi-lightbulb"></i> 最新操作建议</h6><div class="advice-text" id="trade-advice">加载中...</div></div></div></div>
-                <div class="col-md-3"><div class="card card-dark h-100"><div class="card-body text-center"><h6 class="text-gold"><i class="bi bi-arrow-repeat"></i> 市场周期</h6><div class="cycle-badge" id="cycle-phase">--</div></div></div></div>
-                <div class="col-md-3"><div class="card card-dark h-100"><div class="card-body text-center"><h6 class="text-gold"><i class="bi bi-bullseye"></i> 砸盘信号</h6><div class="smash-signal" id="smash-signal">--</div></div></div></div>
-            </div>
-            <div class="row g-3 mb-4"><div class="col-12"><div class="card card-dark"><div class="card-body"><h6 class="text-gold"><i class="bi bi-graph-up"></i> 砸盘系数近10日走势</h6><div class="chart-container"><canvas id="smashChart"></canvas></div></div></div></div></div>
-            <div class="row g-3" id="prediction-section"><div class="col-12"><div class="card card-dark"><div class="card-body"><h6 class="text-gold"><i class="bi bi-magic"></i> 最新预测</h6><div class="row g-2" id="prediction-cards"><div class="text-muted">加载中...</div></div></div></div></div></div>
-        </div>
 
-        <!-- 每日分析 -->
-        <div id="tab-daily" class="tab-content">
-            <div class="row mb-4"><div class="col-12"><h4 class="text-light mb-3"><i class="bi bi-calendar-check text-gold"></i> 每日分析</h4>
-                <button class="btn btn-outline-light me-2" id="btn-fetch-data" onclick="runFetchData()"><i class="bi bi-cloud-download"></i> 获取今日数据</button>
-                <button class="btn btn-gold" id="btn-run-daily" onclick="runDailyAnalysis()"><i class="bi bi-play-fill"></i> 执行每日分析</button></div></div>
-            <div class="row mb-4" id="daily-progress" style="display:none"><div class="col-12"><div class="card card-dark"><div class="card-body"><div class="d-flex align-items-center mb-2"><div class="spinner-border spinner-border-sm text-gold me-2" id="daily-spinner"></div><span id="daily-status-text">执行中...</span></div><div class="progress"><div class="progress-bar bg-gold" id="daily-progress-bar" style="width:0%"></div></div></div></div></div></div>
-            <div id="daily-results" style="display:none">
-                <div class="row g-3 mb-4"><div class="col-md-6"><div class="card card-dark"><div class="card-body"><h6 class="text-gold"><i class="bi bi-layers"></i> 连板梯队</h6><div id="board-tiers"></div></div></div></div>
-                    <div class="col-md-6"><div class="card card-dark"><div class="card-body"><h6 class="text-gold"><i class="bi bi-pie-chart"></i> 封板质量分布</h6><div class="chart-container-sm"><canvas id="sealPieChart"></canvas></div></div></div></div></div>
-                <div class="row g-3 mb-4"><div class="col-12"><div class="card card-dark"><div class="card-body"><h6 class="text-gold"><i class="bi bi-fire"></i> 概念热度 TOP10</h6><div class="chart-container"><canvas id="conceptBarChart"></canvas></div></div></div></div></div>
-                <div class="row g-3"><div class="col-12"><div class="card card-dark"><div class="card-body"><h6 class="text-gold"><i class="bi bi-magic"></i> 预测结果</h6><div class="row g-2" id="daily-prediction-cards"></div></div></div></div></div>
-            </div>
-        </div>
-
-        <!-- 回测 -->
-        <div id="tab-backtest" class="tab-content">
-            <div class="row mb-4"><div class="col-12"><h4 class="text-light mb-3"><i class="bi bi-clock-history text-gold"></i> 回测模式</h4>
-                <div class="d-flex align-items-center gap-3 flex-wrap">
-                    <div class="input-group" style="max-width:250px"><span class="input-group-text bg-dark text-light border-secondary">回测天数</span><input type="number" class="form-control bg-dark text-light border-secondary" id="backtest-days" value="30" min="5" max="200"></div>
-                    <button class="btn btn-gold" id="btn-run-backtest" onclick="runBacktest()"><i class="bi bi-play-fill"></i> 执行回测</button></div></div></div>
-            <div class="row mb-4" id="backtest-progress" style="display:none"><div class="col-12"><div class="card card-dark"><div class="card-body"><div class="d-flex align-items-center mb-2"><div class="spinner-border spinner-border-sm text-gold me-2" id="bt-spinner"></div><span id="bt-status-text">回测执行中...</span></div><div class="progress"><div class="progress-bar bg-gold" id="bt-progress-bar" style="width:0%"></div></div></div></div></div></div>
-            <div id="backtest-results" style="display:none">
-                <div class="row g-3 mb-4">
-                    <div class="col-md-4"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">回测天数</div><div class="card-value text-gold" id="bt-total-days">--</div></div></div></div>
-                    <div class="col-md-4"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">总预测数</div><div class="card-value text-gold" id="bt-total-pred">--</div></div></div></div>
-                    <div class="col-md-4"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">总验证数</div><div class="card-value text-gold" id="bt-total-verif">--</div></div></div></div>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <div class="card card-dark h-100"><div class="card-body">
+                        <h6 class="text-gold"><i class="bi bi-lightbulb"></i> 最新操作建议</h6>
+                        <div class="advice-text" id="trade-advice">加载中...</div>
+                    </div></div>
                 </div>
-                <div class="row g-3 mb-4"><div class="col-12"><div class="card card-dark"><div class="card-body"><h6 class="text-gold"><i class="bi bi-bar-chart"></i> 每日验证平均得分</h6><div class="chart-container"><canvas id="backtestBarChart"></canvas></div></div></div></div></div>
-                <div class="row g-3"><div class="col-12"><div class="card card-dark"><div class="card-body"><h6 class="text-gold"><i class="bi bi-file-text"></i> 回测报告</h6><div class="markdown-body" id="backtest-report"></div></div></div></div></div>
+                <div class="col-md-3">
+                    <div class="card card-dark h-100"><div class="card-body text-center">
+                        <h6 class="text-gold"><i class="bi bi-arrow-repeat"></i> 市场周期</h6>
+                        <div class="cycle-badge" id="cycle-phase">--</div>
+                    </div></div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card card-dark h-100"><div class="card-body text-center">
+                        <h6 class="text-gold"><i class="bi bi-bullseye"></i> 砸盘信号</h6>
+                        <div class="smash-signal" id="smash-signal">--</div>
+                    </div></div>
+                </div>
             </div>
-        </div>
 
-        <!-- 报告 -->
-        <div id="tab-reports" class="tab-content">
-            <div class="row mb-4"><div class="col-12"><h4 class="text-light mb-3"><i class="bi bi-file-earmark-text text-gold"></i> 历史报告</h4></div></div>
-            <div class="row g-3">
-                <div class="col-md-4"><div class="card card-dark"><div class="card-body"><h6 class="text-gold mb-3">报告列表</h6><div id="report-list"><div class="text-muted">加载中...</div></div></div></div></div>
-                <div class="col-md-8"><div class="card card-dark"><div class="card-body"><div class="d-flex justify-content-between align-items-center mb-3"><h6 class="text-gold mb-0" id="report-title">请选择报告</h6></div><div class="markdown-body" id="report-content"><div class="text-muted">点击左侧报告列表查看内容</div></div></div></div></div>
-            </div>
-        </div>
-
-        <!-- 模型健康度 -->
-        <div id="tab-health" class="tab-content">
-            <div class="row mb-4"><div class="col-12"><h4 class="text-light mb-3"><i class="bi bi-heart-pulse text-gold"></i> 模型健康度</h4></div></div>
-            <div class="row g-3 mb-4">
-                <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">系统状态</div><div class="card-value" id="health-status">--</div></div></div></div>
-                <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">平均可信度</div><div class="card-value text-gold" id="health-credibility">--</div></div></div></div>
-                <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">总因素数</div><div class="card-value" id="health-total">--</div></div></div></div>
-                <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">低可信因素</div><div class="card-value text-danger" id="health-low">--</div></div></div></div>
-            </div>
-            <div class="row g-3 mb-4">
-                <div class="col-md-6"><div class="card card-dark"><div class="card-body"><h6 class="text-gold"><i class="bi bi-sliders"></i> 因素权重分布</h6><div class="chart-container-sm"><canvas id="weightChart"></canvas></div></div></div></div>
-                <div class="col-md-6"><div class="card card-dark"><div class="card-body"><h6 class="text-gold"><i class="bi bi-shield-check"></i> 因素可信度</h6><div class="chart-container-sm"><canvas id="credibilityChart"></canvas></div></div></div></div>
-            </div>
-            <div class="row g-3 mb-4"><div class="col-12"><div class="card card-smash"><div class="card-body"><h6 class="text-gold"><i class="bi bi-exclamation-diamond"></i> 砸盘系数因子状态</h6><div class="row g-3" id="smash-factor-detail"><div class="text-muted">加载中...</div></div></div></div></div></div>
-            <div class="row g-3 mb-4"><div class="col-12"><div class="card card-dark"><div class="card-body"><h6 class="text-gold"><i class="bi bi-graph-up"></i> 权重变化轨迹</h6><div class="chart-container"><canvas id="weightHistoryChart"></canvas></div></div></div></div></div>
-            <div class="row g-3"><div class="col-12"><div class="card card-dark"><div class="card-body"><h6 class="text-gold"><i class="bi bi-journal-text"></i> 自适应修正日志</h6><div class="table-responsive"><table class="table table-dark table-striped table-sm"><thead><tr><th>日期</th><th>触发</th><th>因素</th><th>旧权重</th><th>新权重</th><th>原因</th></tr></thead><tbody id="correction-log-body"><tr><td colspan="6" class="text-muted">加载中...</td></tr></tbody></table></div></div></div></div></div>
-        </div>
-
-        <!-- 智能推荐 -->
-        <div id="tab-recommend" class="tab-content">
-            <div class="row mb-4">
+            <!-- 砸盘 × 最高连板 双轴趋势图（ECharts，30日，叠加变盘节点 + 龙头诞生） -->
+            <div class="row g-3 mb-3">
                 <div class="col-12">
-                    <h4 class="text-light mb-3"><i class="bi bi-brain text-gold"></i> 🧠 智能推荐引擎</h4>
-                    <button class="btn btn-gold me-2" id="btn-run-recommend" onclick="runRecommend()">
-                        <i class="bi bi-play-fill"></i> 生成智能推荐
-                    </button>
-                    <button class="btn btn-outline-light" onclick="loadRecommendationHistory()">
-                        <i class="bi bi-clock-history"></i> 查看推荐历史
-                    </button>
+                    <div class="card card-dark">
+                        <div class="card-body">
+                            <h6 class="text-gold"><i class="bi bi-graph-up"></i> 砸盘系数 × 最高连板（近30交易日）· 变盘节点 & 总龙头诞生监测</h6>
+                            <small class="text-muted d-block mb-2">左轴砸盘系数（黄线，&lt;3冰点 / 3-5博弈 / &gt;5过热）；右轴最高连板（青柱）；⭐=新总龙头诞生节点（自动微信推送）</small>
+                            <div id="smashChart" style="width:100%;height:480px;"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <!-- 推荐进度 -->
-            <div class="row mb-4" id="recommend-progress" style="display:none">
-                <div class="col-12"><div class="card card-dark"><div class="card-body">
+
+            <div class="row g-3 mb-3" id="prediction-section">
+                <div class="col-12">
+                    <div class="card card-dark"><div class="card-body">
+                        <h6 class="text-gold"><i class="bi bi-magic"></i> 最新预测</h6>
+                        <div class="row g-2" id="prediction-cards"><div class="text-muted">加载中...</div></div>
+                    </div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== 每日分析 ========== -->
+        <div id="tab-daily" class="tab-content">
+            <div class="row mb-3"><div class="col-12">
+                <h4 class="text-light mb-3"><i class="bi bi-calendar-check text-gold"></i> 每日分析</h4>
+                <button class="btn btn-outline-light me-2" id="btn-fetch-data" onclick="runFetchData()"><i class="bi bi-cloud-download"></i> 获取今日数据</button>
+                <button class="btn btn-gold" id="btn-run-daily" onclick="runDailyAnalysis()"><i class="bi bi-play-fill"></i> 执行每日分析</button>
+            </div></div>
+            <div class="row mb-3" id="daily-progress" style="display:none"><div class="col-12">
+                <div class="card card-dark"><div class="card-body">
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="spinner-border spinner-border-sm text-gold me-2" id="daily-spinner"></div>
+                        <span id="daily-status-text">执行中...</span>
+                    </div>
+                    <div class="progress"><div class="progress-bar bg-gold" id="daily-progress-bar" style="width:0%"></div></div>
+                </div></div>
+            </div></div>
+            <div id="daily-results" style="display:none">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6"><div class="card card-dark"><div class="card-body">
+                        <h6 class="text-gold"><i class="bi bi-layers"></i> 连板梯队</h6>
+                        <div id="board-tiers"></div>
+                    </div></div></div>
+                    <div class="col-md-6"><div class="card card-dark"><div class="card-body">
+                        <h6 class="text-gold"><i class="bi bi-pie-chart"></i> 封板质量分布</h6>
+                        <div class="chart-container-sm"><canvas id="sealPieChart"></canvas></div>
+                    </div></div></div>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-12"><div class="card card-dark"><div class="card-body">
+                        <h6 class="text-gold"><i class="bi bi-fire"></i> 概念热度 TOP10</h6>
+                        <div class="chart-container"><canvas id="conceptBarChart"></canvas></div>
+                    </div></div></div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-12"><div class="card card-dark"><div class="card-body">
+                        <h6 class="text-gold"><i class="bi bi-magic"></i> 预测结果</h6>
+                        <div class="row g-2" id="daily-prediction-cards"></div>
+                    </div></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== 智能推荐 ========== -->
+        <div id="tab-recommend" class="tab-content">
+            <div class="row mb-3"><div class="col-12">
+                <h4 class="text-light mb-3"><i class="bi bi-stars text-gold"></i> 智能推荐（确定性优先）</h4>
+                <button class="btn btn-gold" id="btn-run-recommend" onclick="runRecommend()"><i class="bi bi-play-fill"></i> 生成智能推荐</button>
+            </div></div>
+            <div class="row mb-3" id="recommend-progress" style="display:none"><div class="col-12">
+                <div class="card card-dark"><div class="card-body">
                     <div class="d-flex align-items-center mb-2">
                         <div class="spinner-border spinner-border-sm text-gold me-2" id="rec-spinner"></div>
                         <span id="rec-status-text">分析中...</span>
                     </div>
                     <div class="progress"><div class="progress-bar bg-gold" id="rec-progress-bar" style="width:0%"></div></div>
-                </div></div></div>
-            </div>
-            <!-- 推荐结果 -->
+                </div></div>
+            </div></div>
             <div id="recommend-results" style="display:none">
-                <div class="row g-3 mb-4">
-                    <div class="col-md-4">
-                        <div class="card card-dark h-100">
-                            <div class="card-body">
-                                <h6 class="text-gold"><i class="bi bi-bar-chart"></i> 市场状态</h6>
-                                <div id="rec-market-state"></div>
-                            </div>
-                        </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <div class="card card-dark h-100"><div class="card-body">
+                            <h6 class="text-gold"><i class="bi bi-speedometer2"></i> 当前市场状态</h6>
+                            <div id="rec-market-state" class="market-state-grid"></div>
+                        </div></div>
                     </div>
-                    <div class="col-md-8">
-                        <div class="card card-dark h-100">
-                            <div class="card-body">
-                                <h6 class="text-gold"><i class="bi bi-clipboard-check"></i> 次日策略</h6>
-                                <div id="rec-next-strategy"></div>
-                            </div>
-                        </div>
+                    <div class="col-md-6">
+                        <div class="card card-dark h-100"><div class="card-body">
+                            <h6 class="text-gold"><i class="bi bi-compass"></i> 次日操作策略</h6>
+                            <div id="rec-next-strategy"></div>
+                        </div></div>
                     </div>
                 </div>
-                <div class="row g-3 mb-4">
-                    <div class="col-12">
-                        <div class="card card-dark">
-                            <div class="card-body">
-                                <h6 class="text-gold"><i class="bi bi-star"></i> 推荐个股</h6>
-                                <div id="rec-stock-list"></div>
-                            </div>
-                        </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-lg-8">
+                        <h6 class="text-light mb-2"><i class="bi bi-trophy text-gold"></i> 推荐个股</h6>
+                        <div id="rec-stock-list"></div>
                     </div>
-                </div>
-                <div class="row g-3 mb-4">
-                    <div class="col-12">
-                        <div class="card card-dark">
-                            <div class="card-body">
-                                <h6 class="text-gold"><i class="bi bi-radar"></i> 5维评分对比</h6>
-                                <div class="chart-container"><canvas id="radarChart"></canvas></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="row g-3 mb-4">
-                    <div class="col-12">
-                        <div class="card card-dark">
-                            <div class="card-body">
-                                <h6 style="color:#f6465d"><i class="bi bi-shield-exclamation"></i> 出场信号 · 风险控制</h6>
-                                <div id="exit-signals-panel" style="display:none"></div>
-                                <div id="exit-signals-loading" style="text-align:center;padding:20px;color:#6b7280;font-size:0.8rem">
-                                    <i class="bi bi-arrow-repeat"></i> 加载出场信号中...
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="row g-3">
-                    <div class="col-12">
-                        <div class="card card-dark">
-                            <div class="card-body">
-                                <h6 class="text-gold"><i class="bi bi-table"></i> 推荐历史</h6>
-                                <div class="table-responsive">
-                                    <table class="table table-dark table-striped table-sm">
-                                        <thead><tr><th>日期</th><th>代码</th><th>名称</th><th>评分</th><th>预估胜率</th><th>建议</th><th>结果</th></tr></thead>
-                                        <tbody id="rec-history-body"><tr><td colspan="7" class="text-muted">点击"查看推荐历史"加载</td></tr></tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
+                    <div class="col-lg-4">
+                        <h6 class="text-light mb-2"><i class="bi bi-pie-chart text-gold"></i> 维度雷达</h6>
+                        <div class="card card-dark"><div class="card-body"><div class="chart-container-sm"><canvas id="radarChart"></canvas></div></div></div>
+                        <h6 class="text-light mt-3 mb-2"><i class="bi bi-shield-exclamation text-gold"></i> 出场信号</h6>
+                        <div id="exit-signals-panel"><div id="exit-signals-loading" class="text-muted">加载中...</div></div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 实盘跟踪 -->
-        <div id="tab-tracker" class="tab-content">
-            <div class="row mb-4">
-                <div class="col-12">
-                    <h4 class="text-light mb-3"><i class="bi bi-bullseye text-gold"></i> 📊 实盘跟踪系统</h4>
-                    <button class="btn btn-gold me-2" id="btn-run-track" onclick="runTrack()">
-                        <i class="bi bi-play-fill"></i> 执行实盘跟踪
-                    </button>
-                </div>
-            </div>
-            <!-- 跟踪进度 -->
-            <div class="row mb-4" id="track-progress" style="display:none">
-                <div class="col-12"><div class="card card-dark"><div class="card-body">
+        <!-- ========== 实盘跟踪 ========== -->
+        <div id="tab-track" class="tab-content">
+            <div class="row mb-3"><div class="col-12">
+                <h4 class="text-light mb-3"><i class="bi bi-bullseye text-gold"></i> 实盘跟踪 & 自适应</h4>
+                <button class="btn btn-gold" id="btn-run-track" onclick="runTrack()"><i class="bi bi-play-fill"></i> 执行实盘跟踪</button>
+                <button class="btn btn-outline-light ms-2" id="btn-run-upgrade" onclick="runAutoUpgrade(false)"><i class="bi bi-arrow-up-circle"></i> 执行自适应升级</button>
+            </div></div>
+            <div class="row mb-3" id="track-progress" style="display:none"><div class="col-12">
+                <div class="card card-dark"><div class="card-body">
                     <div class="d-flex align-items-center mb-2">
                         <div class="spinner-border spinner-border-sm text-gold me-2" id="track-spinner"></div>
                         <span id="track-status-text">跟踪中...</span>
                     </div>
                     <div class="progress"><div class="progress-bar bg-gold" id="track-progress-bar" style="width:0%"></div></div>
-                </div></div></div>
-            </div>
-            <!-- 跟踪结果 -->
+                </div></div>
+            </div></div>
             <div id="track-results" style="display:none">
-                <div class="row g-3 mb-4">
-                    <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center">
-                        <div class="card-label">累计胜率</div>
-                        <div class="winrate-gauge" id="track-winrate">--</div>
-                    </div></div></div>
-                    <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center">
-                        <div class="card-label">推荐总数</div>
-                        <div class="card-value text-gold" id="track-total-rec">--</div>
-                    </div></div></div>
-                    <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center">
-                        <div class="card-label">命中数</div>
-                        <div class="card-value" id="track-total-correct" style="color:var(--green)">--</div>
-                    </div></div></div>
-                    <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center">
-                        <div class="card-label">当日胜率</div>
-                        <div class="card-value" id="track-daily-winrate">--</div>
-                    </div></div></div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">累计胜率</div><div class="card-value text-gold" id="track-winrate">--</div></div></div></div>
+                    <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">总推荐数</div><div class="card-value" id="track-total-rec">--</div></div></div></div>
+                    <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">命中数</div><div class="card-value text-green" id="track-total-correct">--</div></div></div></div>
+                    <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">当日胜率</div><div class="card-value" id="track-daily-winrate">--</div></div></div></div>
                 </div>
-                <div class="row g-3 mb-4">
-                    <div class="col-12">
-                        <div class="card card-dark">
-                            <div class="card-body">
-                                <h6 class="text-gold"><i class="bi bi-check2-circle"></i> 推荐 vs 实际结果</h6>
-                                <div class="table-responsive">
-                                    <table class="table table-dark table-striped table-sm">
-                                        <thead><tr><th>代码</th><th>名称</th><th>评分</th><th>建议</th><th>次日结果</th><th>状态</th></tr></thead>
-                                        <tbody id="track-detail-body"><tr><td colspan="6" class="text-muted">执行跟踪后显示</td></tr></tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="row g-3">
-                    <div class="col-12">
-                        <div class="card card-dark">
-                            <div class="card-body">
-                                <h6 class="text-gold"><i class="bi bi-broadcast"></i> 信号触发状态</h6>
-                                <div class="row g-2" id="track-signal-panel"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <div class="card card-dark mb-3"><div class="card-body">
+                    <h6 class="text-gold"><i class="bi bi-broadcast"></i> 信号面板</h6>
+                    <div class="row g-2" id="track-signal-panel"></div>
+                </div></div>
+                <div class="card card-dark"><div class="card-body">
+                    <h6 class="text-gold"><i class="bi bi-list-check"></i> 推荐明细</h6>
+                    <div class="table-responsive"><table class="table table-dark table-sm">
+                        <thead><tr><th>代码</th><th>名称</th><th>评分</th><th>建议动作</th><th>结果</th><th>命中</th></tr></thead>
+                        <tbody id="track-detail-body"></tbody>
+                    </table></div>
+                </div></div>
             </div>
-        </div>
 
-        <!-- 自适应升级 -->
-        <div id="tab-upgrade" class="tab-content">
-            <div class="row mb-4">
-                <div class="col-12">
-                    <h4 class="text-light mb-3"><i class="bi bi-arrow-repeat text-gold"></i> 🔄 自适应升级系统</h4>
-                    <button class="btn btn-gold me-2" id="btn-run-upgrade" onclick="runAutoUpgrade(false)">
-                        <i class="bi bi-play-fill"></i> 执行自动升级
-                    </button>
-                    <button class="btn btn-outline-light me-2" onclick="runAutoUpgrade(true)">
-                        <i class="bi bi-eye"></i> 仅检查(不调整)
-                    </button>
-                    <button class="btn btn-outline-light" onclick="loadWeightHistory()">
-                        <i class="bi bi-clock-history"></i> 权重调整历史
-                    </button>
-                </div>
-            </div>
-            <!-- 升级进度 -->
-            <div class="row mb-4" id="upgrade-progress" style="display:none">
-                <div class="col-12"><div class="card card-dark"><div class="card-body">
+            <div class="row mb-3 mt-4" id="upgrade-progress" style="display:none"><div class="col-12">
+                <div class="card card-dark"><div class="card-body">
                     <div class="d-flex align-items-center mb-2">
                         <div class="spinner-border spinner-border-sm text-gold me-2" id="upgrade-spinner"></div>
                         <span id="upgrade-status-text">升级中...</span>
                     </div>
                     <div class="progress"><div class="progress-bar bg-gold" id="upgrade-progress-bar" style="width:0%"></div></div>
-                </div></div></div>
-            </div>
-            <!-- 升级结果 -->
+                </div></div>
+            </div></div>
             <div id="upgrade-results" style="display:none">
-                <div class="row g-3 mb-4">
-                    <div class="col-md-4"><div class="card card-dark"><div class="card-body text-center">
-                        <div class="card-label">总推荐数</div><div class="card-value text-gold" id="upg-total-rec">--</div>
-                    </div></div></div>
-                    <div class="col-md-4"><div class="card card-dark"><div class="card-body text-center">
-                        <div class="card-label">总胜率</div><div class="card-value" id="upg-winrate">--</div>
-                    </div></div></div>
-                    <div class="col-md-4"><div class="card card-dark"><div class="card-body text-center">
-                        <div class="card-label">分析区间</div><div class="card-value" style="font-size:1rem" id="upg-period">--</div>
-                    </div></div></div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">推荐总数</div><div class="card-value" id="upg-total-rec">--</div></div></div></div>
+                    <div class="col-md-4"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">综合胜率</div><div class="card-value text-gold" id="upg-winrate">--</div></div></div></div>
+                    <div class="col-md-4"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">统计区间</div><div class="card-value" style="font-size:1rem" id="upg-period">--</div></div></div></div>
                 </div>
-                <div class="row g-3 mb-4">
-                    <div class="col-md-6">
-                        <div class="card card-dark">
-                            <div class="card-body">
-                                <h6 class="text-gold"><i class="bi bi-sliders"></i> 当前权重配置</h6>
-                                <div id="upg-weights-display"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="card card-dark">
-                            <div class="card-body">
-                                <h6 class="text-gold"><i class="bi bi-bar-chart"></i> 权重对比</h6>
-                                <div class="chart-container-sm"><canvas id="weightCompareChart"></canvas></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="row g-3 mb-4">
-                    <div class="col-12">
-                        <div class="card card-dark">
-                            <div class="card-body">
-                                <h6 class="text-gold"><i class="bi bi-globe"></i> 市场风格检测</h6>
-                                <div id="upg-regime-display"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="row g-3 mb-4">
-                    <div class="col-12">
-                        <div class="card card-dark">
-                            <div class="card-body">
-                                <h6 class="text-gold"><i class="bi bi-graph-up"></i> 权重调整历史</h6>
-                                <div class="chart-container"><canvas id="weightAdjustHistChart"></canvas></div>
-                            </div>
-                        </div>
-                    </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-lg-6"><div class="card card-dark h-100"><div class="card-body">
+                        <h6 class="text-gold">权重调整</h6>
+                        <div id="upg-weights-display"></div>
+                    </div></div></div>
+                    <div class="col-lg-6"><div class="card card-dark h-100"><div class="card-body">
+                        <h6 class="text-gold">风格检测</h6>
+                        <div id="upg-regime-display"></div>
+                    </div></div></div>
                 </div>
                 <div class="row g-3">
-                    <div class="col-12">
-                        <div class="card card-dark">
-                            <div class="card-body">
-                                <h6 class="text-gold"><i class="bi bi-journal-text"></i> 系统升级日志</h6>
-                                <div class="table-responsive">
-                                    <table class="table table-dark table-striped table-sm">
-                                        <thead><tr><th>日期</th><th>类型</th><th>详情</th><th>状态</th></tr></thead>
-                                        <tbody id="upgrade-log-body"><tr><td colspan="4" class="text-muted">加载中...</td></tr></tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <div class="col-md-6"><div class="card card-dark"><div class="card-body">
+                        <h6 class="text-gold">权重对比</h6>
+                        <div class="chart-container-sm"><canvas id="weightCompareChart"></canvas></div>
+                    </div></div></div>
+                    <div class="col-md-6"><div class="card card-dark"><div class="card-body">
+                        <h6 class="text-gold">升级日志</h6>
+                        <div class="table-responsive" style="max-height:280px;overflow:auto"><table class="table table-dark table-sm">
+                            <thead><tr><th>日期</th><th>类型</th><th>详情</th><th>状态</th></tr></thead>
+                            <tbody id="upgrade-log-body"></tbody>
+                        </table></div>
+                    </div></div></div>
                 </div>
             </div>
         </div>
 
-        <!-- 信号监控 -->
-        <div id="tab-signals" class="tab-content">
-            <div class="row mb-4">
-                <div class="col-12">
-                    <h4 class="text-light mb-3"><i class="bi bi-broadcast text-gold"></i> 🎯 信号监控系统</h4>
-                </div>
-            </div>
-            <div class="row g-3 mb-4">
-                <div class="col-12">
-                    <div id="signal-cards-container"></div>
-                </div>
-            </div>
-            <div class="row g-3 mb-4">
-                <div class="col-12">
-                    <div class="card card-dark">
-                        <div class="card-body">
-                            <h6 class="text-gold"><i class="bi bi-clock-history"></i> 信号触发历史</h6>
-                            <div id="signal-timeline"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="row g-3">
-                <div class="col-12">
-                    <div class="card card-dark">
-                        <div class="card-body">
-                            <h6 class="text-gold"><i class="bi bi-table"></i> 信号统计</h6>
-                            <div class="table-responsive">
-                                <table class="table table-dark table-striped table-sm">
-                                    <thead><tr><th>信号ID</th><th>名称</th><th>触发次数</th><th>胜率</th><th>平均收益</th><th>条件</th></tr></thead>
-                                    <tbody id="signal-stats-body"><tr><td colspan="6" class="text-muted">加载中...</td></tr></tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 模拟交易 -->
+        <!-- ========== 模拟交易 ========== -->
         <div id="tab-simulate" class="tab-content">
-            <div class="row mb-4">
-                <div class="col-12">
-                    <h4 class="text-light mb-3"><i class="bi bi-graph-up text-gold"></i> 模拟交易回测</h4>
-                    <p class="text-muted">基于历史推荐和出场策略，模拟真实交易，评估策略收益。</p>
-                </div>
-            </div>
-            <div class="row g-3 mb-4">
-                <div class="col-md-8">
-                    <div class="card card-dark">
-                        <div class="card-body">
-                            <h6 class="text-gold">参数设置</h6>
-                            <div class="row g-3">
-                                <div class="col-md-3">
-                                    <label class="form-label text-light">起始日期</label>
-                                    <input type="date" class="form-control bg-dark text-light border-secondary" id="sim-start-date">
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label text-light">结束日期</label>
-                                    <input type="date" class="form-control bg-dark text-light border-secondary" id="sim-end-date">
-                                </div>
-                                <div class="col-md-2">
-                                    <label class="form-label text-light">初始资金(万)</label>
-                                    <input type="number" class="form-control bg-dark text-light border-secondary" id="sim-init-cash" value="100">
-                                </div>
-                                <div class="col-md-2">
-                                    <label class="form-label text-light">选股等级</label>
-                                    <select class="form-select bg-dark text-light border-secondary" id="sim-grade-filter">
-                                        <option value='["S","A"]'>S/A</option>
-                                        <option value='["S","A","B"]'>S/A/B</option>
-                                        <option value='["S"]'>仅S</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-2">
-                                    <label class="form-label text-light">最大持仓</label>
-                                    <input type="number" class="form-control bg-dark text-light border-secondary" id="sim-max-positions" value="5">
-                                </div>
-                            </div>
-                            <div class="row g-3 mt-2">
-                                <div class="col-md-3">
-                                    <label class="form-label text-light">止盈(%)</label>
-                                    <input type="number" class="form-control bg-dark text-light border-secondary" id="sim-take-profit" value="20" step="1">
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label text-light">止损(%)</label>
-                                    <input type="number" class="form-control bg-dark text-light border-secondary" id="sim-stop-loss" value="7" step="1">
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label text-light">仓位比例</label>
-                                    <input type="number" class="form-control bg-dark text-light border-secondary" id="sim-position-pct" value="20" step="5">
-                                </div>
-                                <div class="col-md-3 d-flex align-items-end">
-                                    <button class="btn btn-gold w-100" id="btn-run-simulate"><i class="bi bi-play-fill"></i> 开始回测</button>
-                                </div>
-                            </div>
+            <div class="row mb-3"><div class="col-12">
+                <h4 class="text-light mb-3"><i class="bi bi-cash-coin text-gold"></i> 策略模拟交易</h4>
+                <div class="card card-dark"><div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-2"><label class="form-label text-muted small">开始日期</label><input type="date" class="form-control bg-dark text-light border-secondary" id="sim-start-date"></div>
+                        <div class="col-md-2"><label class="form-label text-muted small">结束日期</label><input type="date" class="form-control bg-dark text-light border-secondary" id="sim-end-date"></div>
+                        <div class="col-md-2"><label class="form-label text-muted small">初始资金</label><input type="number" class="form-control bg-dark text-light border-secondary" id="sim-init-cash" value="100000"></div>
+                        <div class="col-md-2"><label class="form-label text-muted small">单仓比例</label><input type="number" class="form-control bg-dark text-light border-secondary" id="sim-position-pct" value="0.3" step="0.05" min="0.05" max="1"></div>
+                        <div class="col-md-2"><label class="form-label text-muted small">最大持仓</label><input type="number" class="form-control bg-dark text-light border-secondary" id="sim-max-positions" value="3"></div>
+                        <div class="col-md-2"><button class="btn btn-gold w-100" id="btn-run-simulate"><i class="bi bi-play-fill"></i> 开始模拟</button></div>
+                    </div>
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-3"><label class="form-label text-muted small">止损(%)</label><input type="number" class="form-control bg-dark text-light border-secondary" id="sim-stop-loss" value="-7" step="0.5"></div>
+                        <div class="col-md-3"><label class="form-label text-muted small">止盈(%)</label><input type="number" class="form-control bg-dark text-light border-secondary" id="sim-take-profit" value="15" step="0.5"></div>
+                        <div class="col-md-3"><label class="form-label text-muted small">等级筛选</label>
+                            <select class="form-select bg-dark text-light border-secondary" id="sim-grade-filter">
+                                <option value="">全部</option><option value="S">S 级</option><option value="A">A 级及以上</option><option value="B">B 级及以上</option><option value="C">C 级及以上</option>
+                            </select>
                         </div>
                     </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card card-dark h-100">
-                        <div class="card-body">
-                            <h6 class="text-gold">回测进度</h6>
-                            <div id="simulate-progress" style="display:none;">
-                                <div class="d-flex align-items-center mb-2">
-                                    <div class="spinner-border spinner-border-sm text-gold me-2" id="sim-spinner"></div>
-                                    <span id="sim-status-text">进行中...</span>
-                                </div>
-                                <div class="progress"><div class="progress-bar bg-gold" id="sim-progress-bar" style="width:0%"></div></div>
-                            </div>
-                            <div id="simulate-results" style="display:none;">
-                                <!-- 统计卡片将动态生成 -->
-                            </div>
-                        </div>
+                </div></div>
+            </div></div>
+            <div class="row mb-3" id="simulate-progress" style="display:none"><div class="col-12">
+                <div class="card card-dark"><div class="card-body">
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="spinner-border spinner-border-sm text-gold me-2" id="sim-spinner"></div>
+                        <span id="sim-status-text">模拟执行中...</span>
                     </div>
-                </div>
-            </div>
-            <!-- 图表区域 -->
+                    <div class="progress"><div class="progress-bar bg-gold" id="sim-progress-bar" style="width:0%"></div></div>
+                </div></div>
+            </div></div>
+            <div id="simulate-results" style="display:none"></div>
+        </div>
+
+        <!-- ========== 信号监控 ========== -->
+        <div id="tab-signals" class="tab-content">
+            <div class="row mb-3"><div class="col-12">
+                <h4 class="text-light mb-3"><i class="bi bi-broadcast text-gold"></i> 信号监控</h4>
+                <button class="btn btn-gold" id="btn-quant-signals" onclick="loadSignalsTab()"><i class="bi bi-arrow-clockwise"></i> 刷新信号</button>
+            </div></div>
+            <div class="row g-3 mb-3" id="signal-cards-container"></div>
             <div class="row g-3">
-                <div class="col-12">
-                    <div class="card card-dark">
-                        <div class="card-body">
-                            <h6 class="text-gold">净值曲线</h6>
-                            <div class="chart-container"><canvas id="simNetChart"></canvas></div>
-                        </div>
-                    </div>
+                <div class="col-lg-7">
+                    <div class="card card-dark"><div class="card-body">
+                        <h6 class="text-gold"><i class="bi bi-activity"></i> 信号统计</h6>
+                        <div class="table-responsive"><table class="table table-dark table-sm">
+                            <thead><tr><th>信号</th><th>触发次数</th><th>胜率</th><th>平均收益</th><th>最近触发</th></tr></thead>
+                            <tbody id="signal-stats-body"></tbody>
+                        </table></div>
+                    </div></div>
                 </div>
-                <div class="col-12">
-                    <div class="card card-dark">
-                        <div class="card-body">
-                            <h6 class="text-gold">交易明细</h6>
-                            <div class="table-responsive" style="max-height:300px;overflow-y:auto;">
-                                <table class="table table-dark table-striped table-sm">
-                                    <thead><tr><th>日期</th><th>代码</th><th>操作</th><th>价格</th><th>数量</th><th>盈亏</th><th>理由</th></tr></thead>
-                                    <tbody id="sim-trade-body"></tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
+                <div class="col-lg-5">
+                    <div class="card card-dark"><div class="card-body">
+                        <h6 class="text-gold"><i class="bi bi-clock-history"></i> 信号时间线</h6>
+                        <div id="signal-timeline" style="max-height:480px;overflow:auto"></div>
+                    </div></div>
                 </div>
             </div>
         </div>
+
+        <!-- ========== 回测 ========== -->
+        <div id="tab-backtest" class="tab-content">
+            <div class="row mb-3"><div class="col-12">
+                <h4 class="text-light mb-3"><i class="bi bi-clock-history text-gold"></i> 回测模式</h4>
+                <div class="d-flex align-items-center gap-3 flex-wrap">
+                    <div class="input-group" style="max-width:250px">
+                        <span class="input-group-text bg-dark text-light border-secondary">回测天数</span>
+                        <input type="number" class="form-control bg-dark text-light border-secondary" id="backtest-days" value="30" min="5" max="200">
+                    </div>
+                    <button class="btn btn-gold" id="btn-run-backtest" onclick="runBacktest()"><i class="bi bi-play-fill"></i> 执行回测</button>
+                </div>
+            </div></div>
+            <div class="row mb-3" id="backtest-progress" style="display:none"><div class="col-12">
+                <div class="card card-dark"><div class="card-body">
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="spinner-border spinner-border-sm text-gold me-2" id="bt-spinner"></div>
+                        <span id="bt-status-text">回测执行中...</span>
+                    </div>
+                    <div class="progress"><div class="progress-bar bg-gold" id="bt-progress-bar" style="width:0%"></div></div>
+                </div></div>
+            </div></div>
+            <div id="backtest-results" style="display:none">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">回测天数</div><div class="card-value text-gold" id="bt-total-days">--</div></div></div></div>
+                    <div class="col-md-4"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">总预测数</div><div class="card-value text-gold" id="bt-total-pred">--</div></div></div></div>
+                    <div class="col-md-4"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">验证数</div><div class="card-value" id="bt-total-verif">--</div></div></div></div>
+                </div>
+                <div class="card card-dark"><div class="card-body">
+                    <h6 class="text-gold">回测报告</h6>
+                    <div id="backtest-report" class="markdown-body"></div>
+                    <div class="chart-container mt-3"><canvas id="backtestBarChart"></canvas></div>
+                </div></div>
+            </div>
+        </div>
+
+        <!-- ========== 报告 ========== -->
+        <div id="tab-reports" class="tab-content">
+            <div class="row mb-3"><div class="col-12">
+                <h4 class="text-light mb-3"><i class="bi bi-file-earmark-text text-gold"></i> 历史报告</h4>
+            </div></div>
+            <div class="row g-3">
+                <div class="col-md-4"><div class="card card-dark"><div class="card-body">
+                    <h6 class="text-gold mb-3">报告列表</h6>
+                    <div id="report-list"><div class="text-muted">加载中...</div></div>
+                </div></div></div>
+                <div class="col-md-8"><div class="card card-dark"><div class="card-body">
+                    <h6 class="text-gold mb-3" id="report-title">请选择报告</h6>
+                    <div class="markdown-body" id="report-content"><div class="text-muted">点击左侧报告列表查看内容</div></div>
+                </div></div></div>
+            </div>
+        </div>
+
+        <!-- ========== 模型健康度 ========== -->
+        <div id="tab-health" class="tab-content">
+            <div class="row mb-3"><div class="col-12">
+                <h4 class="text-light mb-3"><i class="bi bi-heart-pulse text-gold"></i> 模型健康度</h4>
+            </div></div>
+            <div class="row g-3 mb-3">
+                <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">系统状态</div><div class="card-value" id="health-status">--</div></div></div></div>
+                <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">平均可信度</div><div class="card-value text-gold" id="health-credibility">--</div></div></div></div>
+                <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">总因素数</div><div class="card-value" id="health-total">--</div></div></div></div>
+                <div class="col-md-3"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">低可信因素</div><div class="card-value text-danger" id="health-low">--</div></div></div></div>
+            </div>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6"><div class="card card-dark"><div class="card-body">
+                    <h6 class="text-gold"><i class="bi bi-sliders"></i> 因素权重分布</h6>
+                    <div class="chart-container-sm"><canvas id="weightChart"></canvas></div>
+                </div></div></div>
+                <div class="col-md-6"><div class="card card-dark"><div class="card-body">
+                    <h6 class="text-gold"><i class="bi bi-shield-check"></i> 因素可信度</h6>
+                    <div class="chart-container-sm"><canvas id="credibilityChart"></canvas></div>
+                </div></div></div>
+            </div>
+            <div class="row g-3 mb-3">
+                <div class="col-12"><div class="card card-smash"><div class="card-body">
+                    <h6 class="text-gold"><i class="bi bi-exclamation-diamond"></i> 砸盘系数因子 (smash_factor) 状态</h6>
+                    <div class="row g-3" id="smash-factor-detail"><div class="text-muted">加载中...</div></div>
+                </div></div></div>
+            </div>
+            <div class="row g-3 mb-3">
+                <div class="col-12"><div class="card card-dark"><div class="card-body">
+                    <h6 class="text-gold"><i class="bi bi-graph-up"></i> 权重变化轨迹</h6>
+                    <div class="chart-container"><canvas id="weightHistoryChart"></canvas></div>
+                </div></div></div>
+            </div>
+            <div class="row g-3">
+                <div class="col-12"><div class="card card-dark"><div class="card-body">
+                    <h6 class="text-gold"><i class="bi bi-journal-text"></i> 修正日志</h6>
+                    <div class="table-responsive" style="max-height:360px;overflow:auto"><table class="table table-dark table-sm">
+                        <thead><tr><th>日期</th><th>因素</th><th>旧权重</th><th>新权重</th><th>原因</th></tr></thead>
+                        <tbody id="correction-log-body"></tbody>
+                    </table></div>
+                </div></div>
+            </div>
+        </div>
+
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
