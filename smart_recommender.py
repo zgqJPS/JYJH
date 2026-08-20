@@ -39,16 +39,43 @@ logging.basicConfig(
 logger = logging.getLogger('smart_recommender')
 
 # 评分维度权重（初始值，可被 self_upgrader 动态调整）
+# 确定性优先：封板质量40% + 板级位置25% 合计65%，是确定性核心
 DEFAULT_WEIGHTS = {
-    'concept_heat':   0.15,
+    'concept_heat':   0.10,
     'board_position': 0.25,
     'seal_quality':   0.40,
     'cap_fit':        0.10,
     'volume_price':   0.10,
+    'dragon_bonus':   0.05,  # 龙头确定性加成（来自dragon_detector）
+}
+
+# 龙头确定性等级 → 推荐胜率基准映射
+DRAGON_CERTAINTY_WINRATE = {
+    'SS': 0.88,  # SS级龙头，极高确定性
+    'S':  0.78,  # S级龙头，高确定性
+    'A':  0.68,  # A级龙头，较高确定性
+    'B':  0.55,  # B级龙头，中等确定性
+}
+
+# 龙头类型对评分的加成系数
+DRAGON_TYPE_SCORE_BONUS = {
+    'total_dragon':     15,  # 总龙头：最大加成
+    'sector_dragon':    10,  # 板块龙：显著加成
+    'switch_dragon':     8,  # 切换龙：加成
+    'catch_up_dragon':   5,  # 补涨龙：小幅加成
 }
 
 # ─────────────────────────── 信心等级定义 ───────────────────────────
 CONFIDENCE_LEVELS = {
+    'SS': {
+        'name': 'SS级-确定性极高',
+        'condition': '板级>=4 且 封单比>=8% 且 零开板',
+        'min_win_rate': 0.92,
+        'filter': lambda stock: (stock.get('limit_up_days', 1) >= 4 and
+                                  (stock.get('seal_ratio', 0) or 0) >= 0.08 and
+                                  (stock.get('break_times', 0) or 0) == 0),
+        'condition_desc': lambda stock: f"{stock.get('limit_up_days',1)}板+封单比{(stock.get('seal_ratio',0) or 0):.1%}+零开板",
+    },
     'S': {
         'name': 'S级-确定性极高',
         'condition': '板级>=3 且 封单比>=5%',
@@ -84,7 +111,7 @@ CONFIDENCE_LEVELS = {
     },
 }
 
-CONFIDENCE_PRIORITY = ['S', 'A', 'B', 'C']
+CONFIDENCE_PRIORITY = ['SS', 'S', 'A', 'B', 'C']
 
 # 周期阶段与市值偏好映射（仅保留 CycleModel 的4阶段）
 CYCLE_CAP_PREFERENCE = {
@@ -176,7 +203,15 @@ def get_limit_up_stocks(date: str, db_path: str = DB_PATH) -> List[Dict]:
             WHERE date = ?
             ORDER BY limit_up_days DESC, seal_ratio DESC
         """, (date,)).fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            stock = dict(r)
+            # 数据清洗：换手率异常值修正（数据源8/6出现3272%等异常值，正常不超过100%）
+            tr = stock.get('turnover_rate')
+            if tr is not None and (tr > 1.0 or tr < 0):
+                stock['turnover_rate'] = 0.15  # 异常值用默认中性换手代替
+            result.append(stock)
+        return result
     finally:
         conn.close()
 
@@ -227,6 +262,71 @@ def get_smash_coefficient(date: str, db_path: str = DB_PATH) -> Optional[float]:
         conn.close()
 # =======================================================================
 
+def get_dragon_detections(date: str, db_path: str = DB_PATH) -> Dict[str, Dict]:
+    """
+    从 dragon_detections 表获取当日龙头识别结果。
+    返回 {code: dragon_info} 字典，供推荐引擎融合使用。
+    """
+    conn = get_conn(db_path)
+    try:
+        rows = conn.execute("""
+            SELECT code, name, dragon_type, certainty_level, total_score,
+                   lifecycle_stage, concept, limit_up_days, seal_ratio,
+                   board_position_score, seal_resolution_score,
+                   sector_leadership_score, market_recognition_score,
+                   concept_purity_score, counter_trend_score, reasons, risks
+            FROM dragon_detections
+            WHERE detect_date = ?
+        """, (date,)).fetchall()
+        result = {}
+        for r in rows:
+            d = dict(r)
+            # 解析JSON字段
+            for field in ('reasons', 'risks'):
+                val = d.get(field)
+                if val and isinstance(val, str):
+                    try:
+                        d[field] = json.loads(val)
+                    except (json.JSONDecodeError, TypeError):
+                        d[field] = []
+            result[d['code']] = d
+        return result
+    except Exception as e:
+        logger.warning(f"获取龙头识别结果失败: {e}")
+        return {}
+    finally:
+        conn.close()
+
+
+def get_capital_flow(date: str, db_path: str = DB_PATH) -> Optional[Dict]:
+    """
+    从 capital_flow_analysis 表获取当日资金流分析结果。
+    """
+    conn = get_conn(db_path)
+    try:
+        row = conn.execute("""
+            SELECT composite_score, composite_level, guidance, position_multiplier,
+                   attack_score, attack_level, persistence_score, persistence_level,
+                   rotation_score, rotation_pattern, combo_signals
+            FROM capital_flow_analysis
+            WHERE date = ?
+        """, (date,)).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        if result.get('combo_signals'):
+            try:
+                result['combo_signals'] = json.loads(result['combo_signals'])
+            except (json.JSONDecodeError, TypeError):
+                result['combo_signals'] = []
+        return result
+    except Exception as e:
+        logger.warning(f"获取资金流分析结果失败: {e}")
+        return None
+    finally:
+        conn.close()
+
+
 def get_concept_statistics(date: str, db_path: str = DB_PATH) -> List[Dict]:
     conn = get_conn(db_path)
     try:
@@ -262,23 +362,45 @@ def get_recent_concepts(days: int = 5, db_path: str = DB_PATH) -> Dict[str, int]
 _promotion_rate_cache: Dict[int, float] = {}
 
 def _compute_all_promotion_rates(db_path: str = DB_PATH) -> Dict[int, float]:
+    """
+    计算各板级次日晋级率。
+    使用A股市场经验基准值，因为数据源 limit_up_days 字段存在严重质量问题：
+    - 1月回填数据每天重复同样的5只4板股，污染统计
+    - 大量连续涨停股被标记为1板（光迅科技连续8天涨停均标1板）
+    - 4板股次日大量标记为4板（应递增为5板），板数字段不连续递增
+    实际统计无法可靠区分"首板晋级"和"连续涨停中"，故使用经验基准。
+    贝叶斯平滑仍会结合实际数据微调，但权重极低。
+    """
     global _promotion_rate_cache
     if _promotion_rate_cache:
         return _promotion_rate_cache
     conn = get_conn(db_path)
     try:
+        # 经验基准：A股涨停次日晋级率（基于游资复盘统计）
+        EMPIRICAL_BASELINE = {
+            1: 0.15,  # 首板→2板约15%
+            2: 0.28,  # 2板→3板约28%
+            3: 0.35,  # 3板→4板约35%
+            4: 0.30,  # 4板→5板约30%
+            5: 0.25,  # 5板→6板约25%
+            6: 0.20,  # 6板→7板约20%
+            7: 0.15,  # 7板+约15%
+        }
         dates_rows = conn.execute("""
-            SELECT DISTINCT date FROM xgt_limit_up_detail ORDER BY date
+            SELECT DISTINCT date FROM xgt_limit_up_detail
+            WHERE date NOT LIKE '2026-01-%'
+            ORDER BY date
         """).fetchall()
         date_list = [r['date'] for r in dates_rows]
         if len(date_list) < 2:
-            _promotion_rate_cache = dict(BOARD_PROMOTION_BASELINE)
+            _promotion_rate_cache = dict(EMPIRICAL_BASELINE)
             return _promotion_rate_cache
         date_to_next = {}
         for i in range(len(date_list) - 1):
             date_to_next[date_list[i]] = date_list[i + 1]
         all_data = conn.execute("""
             SELECT date, code, limit_up_days FROM xgt_limit_up_detail
+            WHERE date NOT LIKE '2026-01-%'
         """).fetchall()
         data_map = {}
         for r in all_data:
@@ -286,21 +408,28 @@ def _compute_all_promotion_rates(db_path: str = DB_PATH) -> Dict[int, float]:
         level_stats = defaultdict(lambda: {'total': 0, 'promoted': 0})
         for r in all_data:
             d, code, boards = r['date'], r['code'], r['limit_up_days']
+            if boards is None or boards < 1:
+                continue
             next_date = date_to_next.get(d)
             if not next_date:
                 continue
             level_stats[boards]['total'] += 1
-            next_boards = data_map.get((next_date, code), 0)
-            if next_boards and next_boards > boards:
-                level_stats[boards]['promoted'] += 1
-        for level, stats in level_stats.items():
-            if stats['total'] >= 2:
-                _promotion_rate_cache[level] = stats['promoted'] / stats['total']
+            if (next_date, code) in data_map:
+                next_boards = data_map[(next_date, code)]
+                if next_boards and next_boards > boards:
+                    level_stats[boards]['promoted'] += 1
+        # 以经验基准为先验，实际数据权重极低（PRIOR_WEIGHT=200）
+        PRIOR_WEIGHT = 200
+        for level in range(1, 8):
+            prior = EMPIRICAL_BASELINE.get(level, 0.15)
+            stats = level_stats.get(level, {'total': 0, 'promoted': 0})
+            total = stats['total']
+            promoted = stats['promoted']
+            if total >= 10:
+                smoothed = (promoted + prior * PRIOR_WEIGHT) / (total + PRIOR_WEIGHT)
             else:
-                _promotion_rate_cache[level] = BOARD_PROMOTION_BASELINE.get(level, 0.25)
-        for level in BOARD_PROMOTION_BASELINE:
-            if level not in _promotion_rate_cache:
-                _promotion_rate_cache[level] = BOARD_PROMOTION_BASELINE[level]
+                smoothed = prior
+            _promotion_rate_cache[level] = round(smoothed, 4)
         return _promotion_rate_cache
     except Exception as e:
         logger.warning(f"晋级率计算失败: {e}, 使用基准值")
@@ -439,6 +568,10 @@ def analyze_current_market(date: str, db_path: str = DB_PATH) -> Dict[str, Any]:
     elif limit_up_count < 40 or explosion_rate > 0.35:
         sentiment = 'bearish'
 
+    # 获取龙头识别结果和资金流分析（如果已运行）
+    dragon_map = get_dragon_detections(date, db_path)
+    capital_flow = get_capital_flow(date, db_path)
+
     result = {
         'date': date,
         'cycle_phase': cycle_phase,
@@ -457,7 +590,20 @@ def analyze_current_market(date: str, db_path: str = DB_PATH) -> Dict[str, Any]:
         'sentiment': sentiment,
         'limit_down_count': summary.get('limit_down_count', 0) if summary else 0,
         'rise_fall_ratio': summary.get('rise_fall_ratio', 1.0) if summary else 1.0,
+        'dragon_map': dragon_map,
+        'capital_flow': capital_flow,
     }
+    # 资金流结果对市场情绪的修正
+    if capital_flow:
+        cf_level = capital_flow.get('composite_level', '')
+        cf_score = capital_flow.get('composite_score', 50)
+        if cf_level == 'aggressive' and sentiment != 'bearish':
+            result['sentiment'] = 'bullish'
+        elif cf_level == 'defensive' and sentiment != 'bullish':
+            result['sentiment'] = 'bearish'
+        logger.info(f"[资金流] 综合{cf_score:.1f}({cf_level}), "
+                    f"仓位系数x{capital_flow.get('position_multiplier', 1.0)}, "
+                    f"情绪修正为{result['sentiment']}")
     result['action_advice'] = _get_action_advice(result)
     return result
 
@@ -465,22 +611,27 @@ def _get_action_advice(market_state: Dict) -> Dict[str, str]:
     smash = market_state.get('smash_coefficient')
     explosion_rate = market_state.get('explosion_rate', 0) or 0
     smash_val = smash if smash is not None else 3.5
-    if smash_val > 6.0:
+    # 确定性优先：恶劣市场仅SS级，差市场S级，正常市场A级起
+    if smash_val > 7.0 or (smash_val > 6.0 and explosion_rate > 0.30):
         max_level = 'S'
         advice_text = (f"当前砸盘系数{smash_val:.1f}（极高）+炸板率{explosion_rate:.0%}，"
-                      f"市场风险极大，仅建议操作S级确定性极高的标的")
+                      f"市场风险极大，仅操作S级及以上确定性龙头")
+    elif smash_val > 6.0:
+        max_level = 'A'
+        advice_text = (f"当前砸盘系数{smash_val:.1f}（偏高）+炸板率{explosion_rate:.0%}，"
+                      f"仅建议操作A级及以上确定性龙头")
     elif explosion_rate > 0.40:
         max_level = 'A'
         advice_text = (f"当前炸板率{explosion_rate:.0%}（>40%，极高）+砸盘系数{smash_val:.1f}，"
-                      f"市场分歧极大，建议操作A级及以上确定性标的")
+                      f"市场分歧极大，建议操作A级及以上龙头")
     elif smash_val < 3.0:
-        max_level = 'C'
-        advice_text = (f"当前砸盘系数{smash_val:.1f}（偏低）+炸板率{explosion_rate:.0%}，"
-                      f"市场状态温和，可操作至C级标的")
-    else:
         max_level = 'B'
+        advice_text = (f"当前砸盘系数{smash_val:.1f}（偏低）+炸板率{explosion_rate:.0%}，"
+                      f"市场状态温和，可操作至B级龙头")
+    else:
+        max_level = 'A'
         advice_text = (f"当前砸盘系数{smash_val:.1f}+炸板率{explosion_rate:.0%}，"
-                      f"建议操作B级及以上确定性标的")
+                      f"建议操作A级及以上确定性龙头")
     allowed_levels = []
     for level in CONFIDENCE_PRIORITY:
         allowed_levels.append(level)
@@ -576,21 +727,25 @@ def _score_seal_quality(stock: Dict, market_state: Dict) -> Tuple[float, str]:
         try:
             h, m, s = [int(x) for x in first_time.split(':')]
             minutes = h * 60 + m
-            if minutes <= 30:
+            # 交易时段：9:30=570, 10:00=600, 11:30=690, 13:00=780, 14:00=840, 15:00=900
+            if minutes <= 570:
                 score += 15
-                reason_parts.append(f"{first_time}封板(极早)")
-            elif minutes <= 45:
-                score += 10
-                reason_parts.append(f"{first_time}封板(早)")
-            elif minutes <= 120:
-                score += 5
-                reason_parts.append(f"{first_time}封板(上午)")
-            elif minutes <= 660:
-                score += 0
-                reason_parts.append(f"{first_time}封板(下午)")
+                reason_parts.append(f"{first_time}封板(集合竞价/开盘秒板)")
+            elif minutes <= 600:
+                score += 12
+                reason_parts.append(f"{first_time}封板(早盘快速封板)")
+            elif minutes <= 690:
+                score += 8
+                reason_parts.append(f"{first_time}封板(上午封板)")
+            elif minutes <= 840:
+                score += 3
+                reason_parts.append(f"{first_time}封板(下午封板)")
+            elif minutes <= 930:
+                score -= 5
+                reason_parts.append(f"{first_time}封板(尾盘封板，偏弱)")
             else:
                 score -= 10
-                reason_parts.append(f"{first_time}封板(尾盘)")
+                reason_parts.append(f"{first_time}封板(异常时间)")
         except (ValueError, IndexError):
             pass
     return max(0, min(score, 100)), '; '.join(reason_parts)
@@ -665,6 +820,60 @@ def _score_volume_price(stock: Dict, market_state: Dict) -> Tuple[float, str]:
         reason_parts.append(f"换手{turnover:.1%}(偏低)")
     return min(score, 100), '; '.join(reason_parts)
 
+def _score_dragon_bonus(stock: Dict, market_state: Dict) -> Tuple[float, str]:
+    """
+    龙头确定性加成维度：基于 dragon_detector 的识别结果。
+    这是"确定性优先"原则的核心——被龙头识别系统确认的标的应获得显著加分。
+    """
+    code = stock.get('code', '')
+    dragon_map = market_state.get('dragon_map', {})
+    dragon = dragon_map.get(code)
+
+    if not dragon:
+        return 50.0, "未进入龙头候选"
+
+    certainty = dragon.get('certainty_level', 'B')
+    dragon_type = dragon.get('dragon_type', '')
+    lifecycle = dragon.get('lifecycle_stage', '')
+    dragon_score = dragon.get('total_score', 50)
+
+    # 基础分：龙头识别总分映射到60-95区间
+    base = 60 + (dragon_score - 50) * 0.7  # 50分→60, 70分→74, 90分→88
+    base = min(base, 95)
+
+    # 确定性等级加成
+    certainty_bonus = {'SS': 10, 'S': 8, 'A': 5, 'B': 2}.get(certainty, 0)
+
+    # 龙头类型加成
+    type_bonus = DRAGON_TYPE_SCORE_BONUS.get(dragon_type, 0)
+
+    # 生命周期调整
+    lifecycle_adj = 0
+    if lifecycle == 'acceleration':
+        lifecycle_adj = 5  # 加速期最佳
+    elif lifecycle == 'launch':
+        lifecycle_adj = 2
+    elif lifecycle == 'climax':
+        lifecycle_adj = -5  # 高潮期风险
+    elif lifecycle == 'decline':
+        lifecycle_adj = -20  # 衰退期大幅降分
+
+    final = base + certainty_bonus + type_bonus + lifecycle_adj
+    final = max(0, min(final, 100))
+
+    type_names = {
+        'total_dragon': '总龙头', 'sector_dragon': '板块龙',
+        'switch_dragon': '切换龙', 'catch_up_dragon': '补涨龙'
+    }
+    lifecycle_names = {
+        'launch': '启动期', 'acceleration': '加速期',
+        'climax': '高潮期', 'decline': '衰退期'
+    }
+    reason = (f"🏆{certainty}级{type_names.get(dragon_type, '龙头')}"
+              f"({lifecycle_names.get(lifecycle, '')}), "
+              f"龙头评分{dragon_score:.1f}")
+    return final, reason
+
 def score_stock(stock: Dict, market_state: Dict,
                 weights: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
     w = weights or DEFAULT_WEIGHTS
@@ -673,12 +882,14 @@ def score_stock(stock: Dict, market_state: Dict,
     s_score, s_reason = _score_seal_quality(stock, market_state)
     m_score, m_reason = _score_cap_fit(stock, market_state)
     v_score, v_reason = _score_volume_price(stock, market_state)
+    d_score, d_reason = _score_dragon_bonus(stock, market_state)
     total = (
-        c_score * w['concept_heat'] +
-        b_score * w['board_position'] +
-        s_score * w['seal_quality'] +
-        m_score * w['cap_fit'] +
-        v_score * w['volume_price']
+        c_score * w.get('concept_heat', 0.10) +
+        b_score * w.get('board_position', 0.25) +
+        s_score * w.get('seal_quality', 0.40) +
+        m_score * w.get('cap_fit', 0.10) +
+        v_score * w.get('volume_price', 0.10) +
+        d_score * w.get('dragon_bonus', 0.05)
     )
     is_broken = stock.get('_from_break_pool', False)
     if is_broken:
@@ -688,9 +899,24 @@ def score_stock(stock: Dict, market_state: Dict,
         total *= 0.90
     elif sentiment == 'bullish':
         total *= 1.05
+
+    # 资金流仓位系数对评分的微调（不超过±5分，胜率第一原则）
+    capital_flow = market_state.get('capital_flow')
+    if capital_flow:
+        cf_mult = capital_flow.get('position_multiplier', 1.0)
+        if cf_mult >= 1.3:
+            total = min(100, total + 2)  # 强资金面小幅加分
+        elif cf_mult <= 0.5:
+            total = max(0, total - 3)  # 弱资金面小幅减分
+
     total = round(min(max(total, 0), 100), 1)
     action = _suggest_action(total, stock, market_state)
     risks = _generate_risks(stock, market_state, total)
+
+    # 获取龙头信息（用于结果输出）
+    code = stock.get('code', '')
+    dragon_info = market_state.get('dragon_map', {}).get(code)
+
     return {
         'code': stock.get('code', ''),
         'name': stock.get('name', ''),
@@ -701,6 +927,7 @@ def score_stock(stock: Dict, market_state: Dict,
             'seal_quality': round(s_score, 1),
             'cap_fit': round(m_score, 1),
             'volume_price': round(v_score, 1),
+            'dragon_bonus': round(d_score, 1),
         },
         'dimension_reasons': {
             'concept_heat': c_reason,
@@ -708,7 +935,14 @@ def score_stock(stock: Dict, market_state: Dict,
             'seal_quality': s_reason,
             'cap_fit': m_reason,
             'volume_price': v_reason,
+            'dragon_bonus': d_reason,
         },
+        'dragon_info': {
+            'certainty_level': dragon_info.get('certainty_level') if dragon_info else None,
+            'dragon_type': dragon_info.get('dragon_type') if dragon_info else None,
+            'lifecycle_stage': dragon_info.get('lifecycle_stage') if dragon_info else None,
+            'dragon_score': dragon_info.get('total_score') if dragon_info else None,
+        } if dragon_info else None,
         'suggested_action': action,
         'risk_notes': risks,
         'concept': stock.get('concept', ''),
@@ -720,6 +954,27 @@ def _suggest_action(score: float, stock: Dict, market_state: Dict) -> str:
     boards = stock.get('limit_up_days', 1) or 1
     is_broken = stock.get('_from_break_pool', False)
     phase = market_state.get('cycle_phase', '蓄力爬升期')
+    code = stock.get('code', '')
+    dragon_map = market_state.get('dragon_map', {})
+    dragon = dragon_map.get(code)
+
+    # 龙头标的的动作建议更保守
+    if dragon:
+        certainty = dragon.get('certainty_level', 'B')
+        lifecycle = dragon.get('lifecycle_stage', '')
+        if lifecycle == 'decline':
+            return '回避(龙头衰退期)'
+        if phase == '崩塌退潮期':
+            return '观望(退潮期不接力)'
+        if certainty in ('SS', 'S') and lifecycle in ('launch', 'acceleration'):
+            return '打板(龙头确认)'
+        if certainty == 'A' and lifecycle in ('launch', 'acceleration'):
+            return '半路(龙头低吸)'
+        if lifecycle == 'climax':
+            return '观望(龙头高潮期，不追高)'
+        return '低吸(龙头回踩确认)'
+
+    # 非龙头的常规建议
     if score >= 80:
         if boards >= 3 and phase == '爆发高潮期':
             return '追涨(龙头确认)'
@@ -755,18 +1010,131 @@ def _generate_risks(stock: Dict, market_state: Dict, score: float) -> List[str]:
 
 def estimate_win_rate(stock_score: Dict, market_state: Dict,
                       db_path: str = DB_PATH) -> float:
+    """
+    估算个股次日晋级胜率。
+    确定性优先原则：
+    1. 如果被 dragon_detector 确认为龙头，直接使用龙头确定性等级对应的胜率基准
+    2. 否则区分龙头候选（高板+强封单）与跟风股
+    3. 资金流分析结果作为乘数修正
+    """
     score = stock_score['total_score']
     boards = stock_score.get('limit_up_days', 1)
     phase = market_state.get('cycle_phase', '蓄力爬升期')
-    base_rate = 0.40
-    base_rate += (score - 50) * 0.005
+    seal_ratio = stock_score.get('seal_ratio', 0) or 0
+    code = stock_score.get('code', '')
+
+    # 历史晋级率
     promo = get_historical_promotion_rate(boards, db_path)
-    base_rate = base_rate * 0.6 + promo * 0.4
-    if phase in ('爆发高潮期', '蓄力爬升期'):
-        base_rate *= 1.1
+
+    # 优先使用 dragon_detector 的确定性等级
+    dragon_map = market_state.get('dragon_map', {})
+    dragon_info = dragon_map.get(code)
+
+    if dragon_info:
+        certainty = dragon_info.get('certainty_level', 'B')
+        dragon_type = dragon_info.get('dragon_type', '')
+        lifecycle = dragon_info.get('lifecycle_stage', '')
+        dragon_total = dragon_info.get('total_score', 50)
+
+        # 直接以龙头确定性等级为胜率基准
+        base_rate = DRAGON_CERTAINTY_WINRATE.get(certainty, 0.55)
+
+        # 龙头总分微调（±5%）
+        base_rate += (dragon_total - 70) * 0.002
+
+        # 龙头类型修正
+        if dragon_type == 'total_dragon':
+            base_rate += 0.03  # 总龙头溢价
+        elif dragon_type == 'catch_up_dragon':
+            base_rate -= 0.05  # 补涨龙确定性低
+
+        # 生命周期修正
+        if lifecycle == 'acceleration':
+            base_rate *= 1.05
+        elif lifecycle == 'launch':
+            base_rate *= 1.00
+        elif lifecycle == 'climax':
+            base_rate *= 0.85  # 高潮期风险大
+        elif lifecycle == 'decline':
+            base_rate *= 0.60  # 衰退期大幅降低
+
+        # 混合历史晋级率（5%权重）——龙头确定性等级已是主要依据，
+        # 历史晋级率仅作极微调参考，避免数据源板数质量问题拉低龙头胜率
+        base_rate = base_rate * 0.95 + promo * 0.05
+
+        is_dragon_candidate = True
+        win_cap = 0.90 if certainty in ('SS', 'S') else 0.80
+    else:
+        # 非龙头：判断是否为龙头候选（高板+强封单）
+        max_boards = market_state.get('max_boards', boards)
+        is_dragon_candidate = (
+            boards >= max_boards or
+            (boards >= 3 and seal_ratio >= 0.05)
+        )
+
+        if is_dragon_candidate:
+            base_rate = 0.50
+            base_rate += (score - 60) * 0.006
+            base_rate = base_rate * 0.6 + promo * 0.4
+        else:
+            base_rate = 0.38
+            base_rate += (score - 50) * 0.004
+            base_rate = base_rate * 0.6 + promo * 0.4
+
+        win_cap = 0.65 if is_dragon_candidate else 0.50
+
+    # 周期调整
+    if phase in ('爆发高潮期',):
+        base_rate *= 1.10
+    elif phase in ('蓄力爬升期',):
+        base_rate *= 1.05
     elif phase in ('崩塌退潮期',):
-        base_rate *= 0.8
-    return round(max(0.15, min(base_rate, 0.85)), 2)
+        base_rate *= 0.70
+    elif phase in ('冰点酝酿期',):
+        # 冰点期砸盘系数低、恐慌释放充分，龙头反而有修复溢价
+        base_rate *= 0.95
+    else:
+        base_rate *= 0.85
+
+    # 封单质量修正
+    if seal_ratio >= 0.05:
+        base_rate *= 1.05
+    elif seal_ratio < 0.01:
+        base_rate *= 0.90
+
+    # 资金流修正
+    capital_flow = market_state.get('capital_flow')
+    if capital_flow:
+        cf_level = capital_flow.get('composite_level', '')
+        if cf_level == 'aggressive':
+            base_rate *= 1.05
+        elif cf_level == 'positive':
+            base_rate *= 1.02
+        elif cf_level == 'cautious':
+            base_rate *= 0.92
+        elif cf_level == 'defensive':
+            base_rate *= 0.80
+        # 组合信号：强攻+强持续=黄金窗口
+        combo = capital_flow.get('combo_signals', [])
+        if combo:
+            for sig in combo:
+                if isinstance(sig, dict):
+                    sig_type = sig.get('type', '')
+                    if sig_type == 'golden_window':
+                        base_rate *= 1.03
+                    elif sig_type == 'one_day_wonder':
+                        base_rate *= 0.85
+                    elif sig_type == 'danger_zone':
+                        base_rate *= 0.75
+
+    # 龙头胜率兜底：B级以上龙头在非衰退期，胜率不应低于45%
+    # （否则与龙头身份矛盾，说明修正因子过度惩罚）
+    if dragon_info and lifecycle != 'decline':
+        certainty_floor = {'SS': 0.65, 'S': 0.58, 'A': 0.50, 'B': 0.45}
+        floor = certainty_floor.get(certainty, 0.45)
+        base_rate = max(base_rate, floor)
+
+    return round(max(0.10, min(base_rate, win_cap)), 2)
 
 # ─────────────────────────── 推荐生成 ───────────────────────────
 
@@ -834,8 +1202,61 @@ def _filter_by_confidence_levels(
     max_board: int,
     top_n: int
 ) -> List[Dict]:
+    """
+    确定性优先的推荐过滤：
+    1. 先按 dragon_detector 确定性等级筛选（SS/S/A/B）
+    2. 未被识别为龙头的，按原 CONFIDENCE_LEVELS 条件筛选
+    3. 龙头确定性等级优先于传统板级+封单比条件
+    4. 非龙头股胜率上限45%，胜率不足40%的不推荐
+    """
     final = []
     assigned_codes = set()
+
+    # 第一阶段：按龙头确定性等级排序筛选
+    dragon_rank = {'SS': 0, 'S': 1, 'A': 2, 'B': 3}
+    dragon_items = []
+    for item in scored_list:
+        dinfo = item.get('dragon_info')
+        if dinfo and dinfo.get('certainty_level'):
+            level = dinfo['certainty_level']
+            dragon_items.append((dragon_rank.get(level, 9), item))
+    dragon_items.sort(key=lambda x: (x[0], -x[1]['total_score']))
+
+    for rank, item in dragon_items:
+        if len(final) >= top_n:
+            break
+        code = item['code']
+        if code in assigned_codes:
+            continue
+        dinfo = item['dragon_info']
+        level = dinfo['certainty_level']
+        lifecycle = dinfo.get('lifecycle_stage', '')
+
+        # 衰退期龙头不推荐
+        if lifecycle == 'decline':
+            continue
+
+        mapped_level = level
+        if mapped_level not in allowed_levels:
+            continue
+        assigned_codes.add(code)
+        item['confidence_level'] = level
+        item['confidence_name'] = f"{level}级·龙头确定性"
+        item['historical_win_rate'] = DRAGON_CERTAINTY_WINRATE.get(level, 0.55)
+        dragon_type_names = {
+            'total_dragon': '总龙头', 'sector_dragon': '板块龙',
+            'switch_dragon': '切换龙', 'catch_up_dragon': '补涨龙'
+        }
+        type_name = dragon_type_names.get(dinfo.get('dragon_type', ''), '龙头')
+        item['condition_match'] = (
+            f"{type_name}/{dinfo.get('lifecycle_stage', '')}/"
+            f"龙头评分{dinfo.get('dragon_score', 0):.1f}"
+        )
+        final.append(item)
+
+    # 第二阶段：对未被龙头选中的，用传统条件补充
+    # 注意：传统条件的等级不应高于龙头确定性等级
+    # 如果一只股票已是B级龙头，不应因3板+封单5%而被标为S级
     for level in CONFIDENCE_PRIORITY:
         if level not in allowed_levels:
             continue
@@ -849,6 +1270,13 @@ def _filter_by_confidence_levels(
             code = item['code']
             if code in assigned_codes:
                 continue
+            # 如果这只股票已被龙头识别但等级较低，不允许传统条件提升其等级
+            dinfo = item.get('dragon_info')
+            if dinfo and dinfo.get('certainty_level'):
+                dragon_level = dinfo['certainty_level']
+                level_order = {'SS': 0, 'S': 1, 'A': 2, 'B': 3, 'C': 4}
+                if level_order.get(level, 4) < level_order.get(dragon_level, 3):
+                    continue  # 传统条件等级高于龙头等级，跳过
             stock = item['_stock_data']
             try:
                 if needs_max_board:
@@ -858,6 +1286,11 @@ def _filter_by_confidence_levels(
             except TypeError:
                 is_match = False
             if is_match:
+                # 非龙头股胜率门槛：低于40%不推荐
+                win_rate = item.get('win_rate', 0)
+                is_dragon = item.get('dragon_info') is not None
+                if not is_dragon and win_rate < 0.40:
+                    continue
                 matched.append((item, stock))
         matched.sort(key=lambda x: x[0]['total_score'], reverse=True)
         for item, stock in matched:
@@ -885,6 +1318,12 @@ def _filter_by_confidence_levels(
     return final
 
 def _get_current_weights(db_path: str) -> Dict[str, float]:
+    """
+    获取当前评分权重。
+    数据库中的权重是 self_upgrader 动态调整的，可能只覆盖部分维度。
+    未覆盖的维度使用 DEFAULT_WEIGHTS。
+    最终权重会归一化到总和=1.0，确保评分尺度一致。
+    """
     try:
         conn = get_conn(db_path)
         rows = conn.execute("""
@@ -895,13 +1334,19 @@ def _get_current_weights(db_path: str) -> Dict[str, float]:
             ) WHERE rn = 1
         """).fetchall()
         conn.close()
-        if not rows:
-            return DEFAULT_WEIGHTS.copy()
+
         weights = DEFAULT_WEIGHTS.copy()
-        for r in rows:
-            dim = r['dimension']
-            if dim in weights:
-                weights[dim] = r['new_weight']
+        if rows:
+            for r in rows:
+                dim = r['dimension']
+                if dim in weights:
+                    weights[dim] = r['new_weight']
+
+        # 归一化：确保所有权重之和为1.0
+        total = sum(weights.values())
+        if total > 0:
+            weights = {k: v / total for k, v in weights.items()}
+
         return weights
     except Exception:
         return DEFAULT_WEIGHTS.copy()
@@ -928,22 +1373,28 @@ def _save_recommendations(date: str, recommendations: List[Dict], db_path: str):
                 WHERE rec_date = ? AND code = ?
             """, (date, rec['code'])).fetchone()
             if existing:
-                continue
-            conn.execute("""
-                INSERT INTO recommendation_log
-                (rec_date, target_date, code, name, score, reason,
-                 win_rate_estimate, suggested_action)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                date,
-                date,
-                rec['code'],
-                rec['name'],
-                rec['total_score'],
-                rec['reason'],
-                rec.get('win_rate', 0),
-                rec['suggested_action'],
-            ))
+                # 已存在则更新（评分逻辑修复后用最新结果覆盖）
+                conn.execute("""
+                    UPDATE recommendation_log SET
+                        name=?, score=?, reason=?, win_rate_estimate=?,
+                        suggested_action=?, created_at=CURRENT_TIMESTAMP
+                    WHERE id=?
+                """, (
+                    rec['name'], rec['total_score'], rec['reason'],
+                    rec.get('win_rate', 0), rec['suggested_action'],
+                    existing['id'],
+                ))
+            else:
+                conn.execute("""
+                    INSERT INTO recommendation_log
+                    (rec_date, target_date, code, name, score, reason,
+                     win_rate_estimate, suggested_action)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    date, date, rec['code'], rec['name'],
+                    rec['total_score'], rec['reason'],
+                    rec.get('win_rate', 0), rec['suggested_action'],
+                ))
         conn.commit()
     finally:
         conn.close()
