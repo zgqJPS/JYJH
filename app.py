@@ -12,14 +12,15 @@ import logging
 import mimetypes
 import requests
 import time
+import zoneinfo
 import schedule
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
 
-# 强制时区为北京时间（解决 Railway 等环境 UTC 问题）
-os.environ['TZ'] = 'Asia/Shanghai'
-time.tzset()
+tz = zoneinfo.ZoneInfo('Asia/Shanghai')
+now = datetime.now(tz)
+
 
 # 确保项目路径在 sys.path
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -719,8 +720,8 @@ def handle_dashboard():
                 except Exception as e:
                     logger.warning(f"预测生成失败: {e}")
 
-        # 获取砸盘系数历史（用于图表）
-        smash_history = db.get_smash_coefficient_history(limit=10)
+        # 获取砸盘系数历史（用于图表，30个交易日）
+        smash_history = db.get_smash_coefficient_history(limit=30)
         smash_data = [dict(s) for s in smash_history]
         for s in reversed(smash_data):
             smash_chart.append({
@@ -729,6 +730,15 @@ def handle_dashboard():
                 "max_boards": s["max_continuous_boards"]
             })
 
+        # 变盘节点 & 总龙头诞生节点
+        turning_points_data = {"series": [], "turning_points": [],
+                               "dragon_birth_nodes": [], "summary": {}}
+        try:
+            from turning_point_detector import detect_turning_points
+            turning_points_data = detect_turning_points(days=30)
+        except Exception as e:
+            logger.warning(f"变盘节点检测失败: {e}")
+
         db.close()
 
         return {
@@ -736,6 +746,7 @@ def handle_dashboard():
             "data": {
                 "summary": analysis_summary,
                 "smash_chart": smash_chart,
+                "turning_points": turning_points_data,
                 "predictions": predictions
             }
         }
@@ -845,6 +856,19 @@ def handle_smash_history(params):
         db.close()
         return {"success": True, "data": data}
     except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def handle_turning_points(params):
+    """变盘节点 & 总龙头诞生节点（30个交易日）。"""
+    try:
+        days = int(params.get("days", [30])[0])
+        days = max(7, min(days, 90))
+        from turning_point_detector import detect_turning_points
+        result = detect_turning_points(days=days)
+        return {"success": True, "data": result}
+    except Exception as e:
+        logger.error(f"turning_points error: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 
@@ -1181,6 +1205,8 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self._json_response(handle_report_detail(date_str))
             elif path == "/api/smash/history":
                 self._json_response(handle_smash_history(params))
+            elif path == "/api/turning_points":
+                self._json_response(handle_turning_points(params))
             elif path == "/api/model/health":
                 self._json_response(handle_model_health())
             elif path == "/api/signals":
@@ -1332,6 +1358,14 @@ def scheduled_fetch_and_recommend():
         if not data_date:
             logger.warning("定时任务: 无法确定分析日期")
             return
+
+        # 执行龙头识别 + 操作计划 + 资金流（每日完整分析）
+        try:
+            from main import run_daily
+            run_daily()
+        except Exception as e:
+            logger.warning(f"定时任务: run_daily 完整流程失败（降级为仅推荐）: {e}")
+
         if _smart_recommender is None:
             logger.warning("定时任务: 智能推荐模块未加载")
             return
@@ -1360,6 +1394,29 @@ def scheduled_fetch_and_recommend():
             })
         send_recommend_notification(data_date, rec_serialized, market_state, next_day)
         logger.info("定时任务: 微信通知发送完成")
+
+        # 检查是否命中"新总龙头诞生节点"，命中则额外推送
+        try:
+            from turning_point_detector import (
+                check_latest_and_notify,
+                check_latest_risk_and_notify,
+            )
+            birth_node = check_latest_and_notify(notifier=notifier)
+            if birth_node:
+                logger.info(
+                    f"定时任务: 🐉新总龙头诞生节点已推送 - "
+                    f"{birth_node['dragon']['name']}({birth_node['dragon']['code']})"
+                )
+            # 大盘变盘空仓信号（见顶/崩塌）：强 top 信号触发空仓预警
+            risk_node = check_latest_risk_and_notify(notifier=notifier)
+            if risk_node and not risk_node.get("skipped"):
+                sig = risk_node["signal"]
+                logger.info(
+                    f"定时任务: ⚠️大盘空仓信号已推送 - "
+                    f"{sig['name']}({risk_node['date']})"
+                )
+        except Exception as e:
+            logger.warning(f"定时任务: 龙头诞生/空仓信号检测失败: {e}")
     except Exception as e:
         logger.error(f"定时任务: 生成推荐或发送通知失败 {e}")
 

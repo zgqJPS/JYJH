@@ -26,6 +26,10 @@ from self_corrector import SelfCorrector
 from knowledge_base import KnowledgeBase
 from reporter import Reporter
 from smash_coefficient import SmashCoefficientCalculator
+from dragon_detector import DragonDetector
+from operation_planner import OperationPlanner
+from capital_flow_analyzer import CapitalFlowAnalyzer
+from smart_recommender import generate_recommendations as smart_generate_recs
 
 def setup_logging():
     logging.basicConfig(
@@ -58,6 +62,8 @@ def run_daily(db=None):
         
         if not all_dates or latest_existing < today_str:
             logger.info(f"尝试获取 {today_str} 的数据...")
+            # 获取前先清空当日数据，避免残留
+            clear_day_data(today_str)
             fetched_count = fetcher.fetch_daily_limit_up(today_str)
             if fetched_count > 0:
                 logger.info(f"成功获取 {today_str} 涨停数据: {fetched_count} 条")
@@ -65,6 +71,7 @@ def run_daily(db=None):
                 logger.info(f"今天 {today_str} 无数据（可能非交易日），尝试前一天...")
                 from datetime import timedelta
                 yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+                clear_day_data(yesterday_str)
                 fetched_count = fetcher.fetch_daily_limit_up(yesterday_str)
                 if fetched_count > 0:
                     logger.info(f"成功获取 {yesterday_str} 涨停数据: {fetched_count} 条")
@@ -142,7 +149,66 @@ def run_daily(db=None):
         # 7.5 砸盘系数自适应调整
         logger.info("Step 7.5: 砸盘系数自适应调整...")
         smash_adaptation = corrector.adapt_smash_thresholds(target_date)
-        
+
+        # 7.7 资金进攻/持续/轮动分析
+        logger.info("Step 7.7: 资金流分析（进攻/持续/轮动）...")
+        capital_flow_result = None
+        try:
+            cf_analyzer = CapitalFlowAnalyzer(DB_PATH)
+            capital_flow_result = cf_analyzer.analyze(target_date, save=True)
+            cf_report = cf_analyzer.format_report(capital_flow_result)
+            print("\n" + cf_report)
+            logger.info(f"资金流综合评分: {capital_flow_result['composite_score']}, "
+                       f"仓位系数: {capital_flow_result['position_multiplier']}")
+            cf_analyzer.close()
+        except Exception as e:
+            logger.error(f"资金流分析异常: {e}", exc_info=True)
+
+        # 7.8 确定性龙头识别 + 操作计划（传入资金流仓位系数）
+        logger.info("Step 7.8: 确定性龙头识别与操作计划...")
+        try:
+            DragonDetector.init_tables(DB_PATH)
+            OperationPlanner.init_tables(DB_PATH)
+            dragon_detector = DragonDetector(DB_PATH)
+            op_planner = OperationPlanner(DB_PATH)
+            dragons = dragon_detector.detect_dragons(target_date, save=True)
+            # 将资金流仓位系数传入操作计划
+            cf_pos_mult = capital_flow_result['position_multiplier'] if capital_flow_result else 1.0
+            op_plans = op_planner.generate_plans(
+                target_date, top_n=5, save=True,
+                capital_flow_multiplier=cf_pos_mult)
+            dragon_report = dragon_detector.format_dragon_report(dragons, target_date)
+            plan_report = op_planner.format_plans(op_plans, target_date)
+            # 输出龙头和操作计划
+            print("\n" + dragon_report)
+            print("\n" + plan_report)
+            logger.info(f"龙头识别: {len(dragons)}只候选, "
+                       f"操作计划: {sum(1 for p in op_plans if p.get('action')=='operate')}只可操作")
+        except Exception as e:
+            logger.error(f"龙头识别/操作计划异常: {e}", exc_info=True)
+
+        # 7.9 智能推荐（融合龙头识别+资金流分析结果）
+        logger.info("Step 7.9: 智能推荐（融合龙头+资金流）...")
+        try:
+            smart_recs = smart_generate_recs(target_date, top_n=5)
+            if smart_recs:
+                print("\n" + "=" * 60)
+                print("📊 确定性推荐（融合龙头识别+资金流分析）")
+                print("=" * 60)
+                for r in smart_recs:
+                    dinfo = r.get('dragon_info')
+                    dragon_tag = ''
+                    if dinfo:
+                        dragon_tag = f" 🏆{dinfo['certainty_level']}级{dinfo.get('dragon_type','')}"
+                    print(f"  {r['name']}({r['code']}) | 评分{r['total_score']:.1f} | "
+                          f"胜率{r['win_rate']:.0%} | {r['confidence_level']}级 | "
+                          f"{r['suggested_action']}{dragon_tag}")
+                logger.info(f"智能推荐: {len(smart_recs)}只")
+            else:
+                logger.info("智能推荐: 无符合确定性门槛的标的，宁缺毋滥")
+        except Exception as e:
+            logger.error(f"智能推荐异常: {e}", exc_info=True)
+
         # 8. 生成报告
         logger.info("Step 8: 生成报告...")
         report = reporter.generate_daily_report(
@@ -343,6 +409,101 @@ def run_status(db=None):
         if close_db:
             db.close()
 
+def clear_day_data(date_str: str) -> int:
+    """
+    在重新获取某日数据前，清空该日所有相关表的数据，避免脏数据/重复/残留。
+    覆盖：
+      1) 原始行情：xgt_limit_up_detail / xgt_break_limit_up / xgt_limit_down / xgt_daily_summary / limit_up_stocks
+      2) 分析衍生：daily_snapshot / daily_analysis / daily_summary / smash_coefficients / smash_coefficient_results
+         / market_sentiment / sector_flow / concept_analysis / concept_statistics / stock_concept_reason
+      3) 龙头/操作/资金流：dragon_detections / dragon_lifecycle / dragon_cycle_context / operation_plans
+         / capital_flow_analysis / capital_flow_concept_tracking / cycle_context
+      4) 推荐/预测/信号：recommendation_log / prediction_records / signal_tracking / regime_detection_log
+         / daily_tracking_report / strategy_tracking
+    不清理：配置类表（model_weights、signal_weights、trading_calendar、data_fetch_config 等）、
+           回测/历史归档表（historical_limit_up、backtest_records、upgrade_log、correction_log、
+           notification_log、xgt_*_cache）。
+    返回删除行数合计。
+    """
+    logger = logging.getLogger("clear_day")
+    if not date_str:
+        return 0
+
+    # 表 → 日期字段
+    tables_to_clear = [
+        # 原始行情
+        ("xgt_limit_up_detail", "date"),
+        ("xgt_break_limit_up", "date"),
+        ("xgt_limit_down", "date"),
+        ("xgt_daily_summary", "date"),
+        ("limit_up_stocks", "trade_date"),
+        # 每日分析衍生
+        ("daily_snapshot", "date"),
+        ("daily_analysis", "date"),
+        ("daily_summary", "date"),
+        ("smash_coefficients", "trade_date"),
+        ("smash_coefficient_results", "date"),
+        ("market_sentiment", "date"),
+        ("sector_flow", "date"),
+        ("concept_analysis", "date"),
+        ("concept_statistics", "date"),
+        ("stock_concept_reason", "date"),
+        # 龙头/操作/资金流
+        ("dragon_detections", "detect_date"),
+        ("dragon_lifecycle", "first_seen_date"),
+        ("dragon_cycle_context", "date"),
+        ("operation_plans", "plan_date"),
+        ("capital_flow_analysis", "date"),
+        ("capital_flow_concept_tracking", "date"),
+        ("cycle_context", "date"),
+        # 推荐/预测/信号
+        ("recommendation_log", "rec_date"),
+        ("prediction_records", "date"),
+        ("signal_tracking", "trigger_date"),
+        ("regime_detection_log", "detect_date"),
+        ("daily_tracking_report", "report_date"),
+        ("strategy_tracking", "date"),
+    ]
+
+    conn = None
+    total_deleted = 0
+    try:
+        import sqlite3
+        conn = sqlite3.connect(DB_PATH)
+        for table, col in tables_to_clear:
+            try:
+                # 检查表是否存在
+                exists = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    (table,)
+                ).fetchone()
+                if not exists:
+                    continue
+                # 检查字段是否存在
+                cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+                if col not in cols:
+                    logger.debug(f"跳过 {table}：缺少字段 {col}")
+                    continue
+                cur = conn.execute(f"DELETE FROM {table} WHERE {col} = ?", (date_str,))
+                deleted = cur.rowcount
+                total_deleted += deleted if deleted and deleted > 0 else 0
+                if deleted:
+                    logger.info(f"清空 {table}.{col}={date_str}: {deleted} 行")
+            except Exception as e:
+                logger.warning(f"清空 {table} 失败: {e}")
+        conn.commit()
+        logger.info(f"clear_day_data({date_str}) 完成，合计删除 {total_deleted} 行")
+    except Exception as e:
+        logger.error(f"clear_day_data 异常: {e}")
+        if conn:
+            try: conn.rollback()
+            except Exception: pass
+    finally:
+        if conn:
+            conn.close()
+    return total_deleted
+
+
 def run_fetch(date_str=None):
     logger = logging.getLogger("fetch")
     db = Database(DB_PATH)
@@ -350,6 +511,8 @@ def run_fetch(date_str=None):
     try:
         if date_str:
             logger.info(f"=== 获取历史数据 {date_str}（API模式） ===")
+            # 获取前先清空当日数据，避免残留/重复
+            clear_day_data(date_str)
             fetcher = DataFetcher(db)
             target = date_str
             limit_count = fetcher.fetch_daily_limit_up(target)
@@ -358,11 +521,16 @@ def run_fetch(date_str=None):
                 logger.warning(f"{target} 可能非交易日，尝试获取前一个交易日...")
                 from datetime import timedelta
                 prev = (datetime.strptime(target, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+                # 前一天是新目标，同样先清空
+                clear_day_data(prev)
                 limit_count = fetcher.fetch_daily_limit_up(prev)
                 logger.info(f"成功获取 {prev} 数据: {limit_count}条")
             return limit_count
         else:
             logger.info("=== 获取当天实时数据（盯盘页模式） ===")
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            # 获取前先清空当日数据，避免残留/重复
+            clear_day_data(today_str)
             try:
                 from realtime_fetcher import fetch_realtime_today, save_realtime_to_db
                 realtime_data = fetch_realtime_today()
@@ -376,13 +544,14 @@ def run_fetch(date_str=None):
             
             logger.info("=== 降级到API模式获取当天数据 ===")
             fetcher = DataFetcher(db)
-            target = datetime.now().strftime("%Y-%m-%d")
+            target = today_str
             limit_count = fetcher.fetch_daily_limit_up(target)
             logger.info(f"API模式数据获取完成: 涨停{limit_count}条")
             if limit_count == 0:
                 logger.warning(f"{target} 可能非交易日，尝试获取前一个交易日...")
                 from datetime import timedelta
                 prev = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+                clear_day_data(prev)
                 limit_count = fetcher.fetch_daily_limit_up(prev)
                 logger.info(f"成功获取 {prev} 数据: {limit_count}条")
             return limit_count
