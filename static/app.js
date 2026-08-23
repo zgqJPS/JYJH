@@ -3,6 +3,7 @@
 // 额外保护：renderRadarChart 空数组保护
 // 新增：模拟交易功能
 // 新增：量化策略功能
+// 新增：变盘监测仪表盘嵌入功能
 
 // ============ Tab 切换 ============
 document.querySelectorAll('.nav-link[data-tab]').forEach(link => {
@@ -23,7 +24,6 @@ function switchTab(tab) {
     if (tab === 'health') loadModelHealth();
     if (tab === 'signals') loadSignalsTab();
     if (tab === 'simulate') {
-        // 设置默认日期范围
         const end = new Date();
         const start = new Date();
         start.setDate(start.getDate() - 180);
@@ -61,7 +61,7 @@ async function postJSON(url, data) {
 }
 
 // ============ 仪表盘 ============
-let smashChartInstance = null;       // ECharts 实例（砸盘×连板双轴图）
+let smashChartInstance = null;
 let turningPointsData = null;
 
 async function loadDashboard() {
@@ -87,6 +87,8 @@ async function loadDashboard() {
         renderSmashChart(data.smash_chart || [], turningPointsData);
         renderTurningPointPanel(turningPointsData);
         renderPredictions(data.predictions || [], 'prediction-cards');
+        // ===== 新增：加载变盘监测数据 =====
+        loadTurningData();
     } catch (e) { console.error('Dashboard load error:', e); }
 }
 
@@ -98,29 +100,19 @@ const TP_STYLE = {
 };
 
 function renderSmashChart(chartData, tpData) {
-    // ECharts 双轴图：左轴砸盘系数（线），右轴最高连板（柱），叠加变盘节点 + 龙头诞生
-    const dom = document.getElementById('smashChart');
-    if (!dom) return;
-    if (smashChartInstance) {
-        smashChartInstance.dispose();
-        smashChartInstance = null;
-    }
-    smashChartInstance = echarts.init(dom, null, { renderer: 'canvas' });
+    const ctx = document.getElementById('smashChart');
+    if (smashChartInstance) smashChartInstance.destroy();
 
     const labels = chartData.map(d => d.date);
-    const scData = chartData.map(d => d.value);
-    const boardData = chartData.map(d => d.max_boards);
+    const scValues = chartData.map(d => d.value);
+    const boardValues = chartData.map(d => d.max_boards);
 
-    // 按砸盘区间给点着色
-    const scPoints = chartData.map(d => ({
-        value: d.value,
-        itemStyle: {
-            color: d.value == null ? '#666'
-                 : d.value < 3 ? '#0ecb81'
-                 : d.value <= 5 ? '#fcd535'
-                 : '#f6465d'
-        }
-    }));
+    const pointColors = scValues.map(v => {
+        if (v == null) return '#666';
+        if (v < 3) return '#0ecb81';
+        if (v <= 5) return '#fcd535';
+        return '#f6465d';
+    });
 
     const signalMap = {};
     const birthSet = new Set();
@@ -132,178 +124,137 @@ function renderSmashChart(chartData, tpData) {
         (tpData.dragon_birth_nodes || []).forEach(n => birthSet.add(n.date));
     }
 
-    // markPoint：变盘节点（强信号）+ 龙头诞生（⭐ 金星）
-    const marks = [];
-    if (tpData) {
-        (tpData.turning_points || []).forEach(tp => {
-            if (tp.severity !== 'strong') return;
-            const idx = labels.indexOf(tp.date);
-            if (idx < 0) return;
-            const colorMap = { bottom: '#0ecb81', breakout: '#00b8d9', top: '#f6465d' };
-            const iconMap = { bottom: 'triangle', breakout: 'diamond', top: 'pin' };
-            const labelMap = { bottom: '🌱', breakout: '🚀', top: '⚠️' };
-            marks.push({
-                name: tp.name,
-                coord: [tp.date, scData[idx]],
-                value: labelMap[tp.type] || '•',
-                symbol: iconMap[tp.type] || 'circle',
-                symbolSize: 24,
-                itemStyle: { color: colorMap[tp.type] || '#999' },
-                label: { show: true, fontSize: 11, color: '#fff' }
-            });
-        });
-        (tpData.dragon_birth_nodes || []).forEach(n => {
-            const idx = labels.indexOf(n.date);
-            if (idx < 0) return;
-            marks.push({
-                name: '⭐' + n.dragon.name,
-                coord: [n.date, scData[idx]],
-                value: '⭐',
-                symbol: 'path://M512 0l126.3 389.1 409.4-0.1-331.2 240.6 126.5 389.1L512 778.1 208.9 1018.7l126.5-389.1L4.3 389l409.4 0.1z',
-                symbolSize: 42,
-                symbolRotate: 0,
-                itemStyle: { color: '#ffd700', borderColor: '#fff', borderWidth: 2 },
-                label: { show: false }
-            });
-        });
-    }
+    const pointRadii = labels.map(d => birthSet.has(d) ? 9 : 5);
+    const pointStyles = labels.map(d => birthSet.has(d) ? 'star' : 'circle');
+    const pointBorderColors = labels.map(d => birthSet.has(d) ? '#ffd700' : 'rgba(0,0,0,0)');
+    const pointBorderWidths = labels.map(d => birthSet.has(d) ? 3 : 0);
 
-    smashChartInstance.setOption({
-        backgroundColor: 'transparent',
-        tooltip: {
-            trigger: 'axis',
-            backgroundColor: 'rgba(15,23,42,0.96)',
-            borderColor: '#f0b90b',
-            borderWidth: 1,
-            textStyle: { color: '#e5e7eb', fontSize: 12 },
-            formatter: function (params) {
-                if (!params || !params.length) return '';
-                const idx = params[0].dataIndex;
-                const d = labels[idx];
-                const series = (tpData && tpData.series) ? tpData.series[idx] : null;
-                let html = `<div style="font-weight:700;color:#f0b90b;margin-bottom:6px;">${d}${series ? ' · ' + series.phase : ''}</div>`;
-                params.forEach(p => {
-                    html += `<div>${p.marker} ${p.seriesName}: <b>${p.value}</b></div>`;
-                });
-                const sigs = signalMap[d];
-                if (sigs && sigs.length) {
-                    html += '<div style="margin-top:6px;border-top:1px solid rgba(255,255,255,0.1);padding-top:6px;">';
-                    sigs.forEach(s => {
-                        const c = s.type === 'bottom' ? '#0ecb81' : s.type === 'breakout' ? '#00b8d9' : '#f6465d';
-                        html += `<div style="color:${c};">[${s.severity === 'strong' ? '强' : '中'}] ${s.name}</div>`;
-                        html += `<div style="color:#94a3b8;font-size:11px;margin-bottom:4px;">${s.detail}</div>`;
-                    });
-                    html += '</div>';
+    smashChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                {
+                    type: 'bar',
+                    label: '最高连板',
+                    data: boardValues,
+                    backgroundColor: 'rgba(0, 184, 217, 0.25)',
+                    borderColor: 'rgba(0, 184, 217, 0.8)',
+                    borderWidth: 1,
+                    yAxisID: 'y1',
+                    order: 2,
+                    barPercentage: 0.6,
+                },
+                {
+                    type: 'line',
+                    label: '砸盘系数',
+                    data: scValues,
+                    borderColor: '#f0b90b',
+                    backgroundColor: 'rgba(240,185,11,0.12)',
+                    pointBackgroundColor: pointColors,
+                    pointRadius: pointRadii,
+                    pointHoverRadius: 9,
+                    pointStyle: pointStyles,
+                    pointBorderColor: pointBorderColors,
+                    pointBorderWidth: pointBorderWidths,
+                    tension: 0.3,
+                    fill: true,
+                    borderWidth: 2.5,
+                    yAxisID: 'y',
+                    order: 1,
                 }
-                if (series && series.dragon) {
-                    const dd = series.dragon;
-                    html += `<div style="margin-top:4px;color:#ffd700;">🏆 ${dd.name}(${dd.code}) ${dd.level}级${dd.score}分 ${dd.boards}板</div>`;
-                }
-                if (birthSet.has(d)) {
-                    const node = (tpData.dragon_birth_nodes || []).find(x => x.date === d);
-                    if (node) {
-                        html += `<div style="margin-top:4px;color:#ffd700;font-weight:700;">⭐ 新总龙头诞生：${node.trigger}</div>`;
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: { color: '#e5e7eb', font: { size: 12 } }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(20,25,35,0.95)',
+                    borderColor: '#f0b90b',
+                    borderWidth: 1,
+                    titleColor: '#f0b90b',
+                    bodyColor: '#e5e7eb',
+                    callbacks: {
+                        afterBody: (items) => {
+                            const idx = items[0].dataIndex;
+                            const d = labels[idx];
+                            const lines = [];
+                            const sigs = signalMap[d];
+                            if (sigs && sigs.length) {
+                                lines.push('── 变盘信号 ──');
+                                sigs.forEach(s => {
+                                    const st = TP_STYLE[s.type] || { icon: '•' };
+                                    lines.push(`${st.icon} [${s.severity === 'strong' ? '强' : '中'}] ${s.name}: ${s.detail}`);
+                                });
+                            }
+                            if (birthSet.has(d)) {
+                                const node = (tpData.dragon_birth_nodes || []).find(n => n.date === d);
+                                if (node) {
+                                    const dd = node.dragon;
+                                    lines.push(`⭐ 新总龙头: ${dd.name}(${dd.code}) ${dd.level}级 ${dd.boards}板`);
+                                    lines.push(`   触发: ${node.trigger}`);
+                                }
+                            }
+                            return lines;
+                        }
                     }
                 }
-                return html;
-            }
-        },
-        legend: {
-            data: ['砸盘系数', '最高连板'],
-            textStyle: { color: '#cbd5e1' },
-            top: 0
-        },
-        grid: { left: 60, right: 60, top: 40, bottom: 70 },
-        xAxis: {
-            type: 'category',
-            data: labels,
-            axisLine: { lineStyle: { color: '#334155' } },
-            axisLabel: { color: '#94a3b8', rotate: 45, fontSize: 11 }
-        },
-        yAxis: [
-            {
-                type: 'value',
-                name: '砸盘系数',
-                nameTextStyle: { color: '#f0b90b' },
-                min: 0, max: 10,
-                axisLine: { lineStyle: { color: '#f0b90b' } },
-                axisLabel: { color: '#f0b90b' },
-                splitLine: { lineStyle: { color: 'rgba(240,185,11,0.08)' } }
             },
-            {
-                type: 'value',
-                name: '最高连板(板)',
-                nameTextStyle: { color: '#00b8d9' },
-                min: 0, max: 12, interval: 1,
-                axisLine: { lineStyle: { color: '#00b8d9' } },
-                axisLabel: { color: '#00b8d9' },
-                splitLine: { show: false }
-            }
-        ],
-        series: [
-            {
-                name: '最高连板',
-                type: 'bar',
-                yAxisIndex: 1,
-                data: boardData,
-                itemStyle: {
-                    color: 'rgba(0,184,217,0.30)',
-                    borderColor: 'rgba(0,184,217,0.85)',
-                    borderWidth: 1
+            scales: {
+                x: {
+                    ticks: { color: '#9ca3af', maxRotation: 45, minRotation: 45, font: { size: 11 } },
+                    grid: { color: 'rgba(45,55,72,0.3)' }
                 },
-                barWidth: '50%',
-                z: 1
-            },
-            {
-                name: '砸盘系数',
-                type: 'line',
-                yAxisIndex: 0,
-                data: scPoints,
-                smooth: true,
-                symbol: 'circle',
-                symbolSize: 9,
-                lineStyle: { color: '#f0b90b', width: 2.5 },
-                areaStyle: {
-                    color: {
-                        type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-                        colorStops: [
-                            { offset: 0, color: 'rgba(240,185,11,0.35)' },
-                            { offset: 1, color: 'rgba(240,185,11,0.02)' }
-                        ]
-                    }
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    title: { display: true, text: '砸盘系数', color: '#f0b90b', font: { size: 12 } },
+                    ticks: { color: '#f0b90b' },
+                    grid: { color: 'rgba(240,185,11,0.08)' },
+                    suggestedMin: 0,
+                    suggestedMax: 10
                 },
-                markPoint: { data: marks, label: { fontSize: 12 } },
-                z: 3
+                y1: {
+                    type: 'linear',
+                    position: 'right',
+                    title: { display: true, text: '最高连板（板）', color: '#00b8d9', font: { size: 12 } },
+                    ticks: { color: '#00b8d9', stepSize: 1 },
+                    grid: { drawOnChartArea: false },
+                    suggestedMin: 0,
+                    suggestedMax: 12,
+                    offset: true
+                }
             }
-        ]
-    });
-
-    window.addEventListener('resize', () => {
-        if (smashChartInstance) smashChartInstance.resize();
+        }
     });
 }
 
-// 变盘节点 & 龙头诞生下面板（与独立 HTML 预览一致：统计胶囊 + 诞生卡片 + 节点明细）
+// 变盘节点 & 龙头诞生下面板（原仪表盘下方的小面板，保留）
 function renderTurningPointPanel(tpData) {
     const panelId = 'turning-point-panel';
     let panel = document.getElementById(panelId);
     if (!panel) {
-        const chartDom = document.getElementById('smashChart');
-        if (!chartDom) return;
-        // ECharts 容器是 div，向上找 .card / .chart-card 作为插入锚点
-        const hostCard = chartDom.closest('.card, .chart-card') || chartDom.parentElement;
+        const chartCanvas = document.getElementById('smashChart');
+        if (!chartCanvas) return;
+        const chartCard = chartCanvas.closest('.chart-card') || chartCanvas.parentElement;
         panel = document.createElement('div');
         panel.id = panelId;
         panel.style.marginTop = '16px';
-        hostCard.appendChild(panel);
+        chartCard.appendChild(panel);
     }
     if (!tpData || !tpData.series) {
         panel.innerHTML = '';
         return;
     }
 
-    const recent = (tpData.turning_points || []).slice().reverse().slice(0, 12);
-    const births = (tpData.dragon_birth_nodes || []).slice().reverse().slice(0, 8);
+    const recent = (tpData.turning_points || []).slice().reverse().slice(0, 8);
+    const births = (tpData.dragon_birth_nodes || []).slice().reverse().slice(0, 6);
     const s = tpData.summary || {};
 
     const phaseColor = {
@@ -312,90 +263,44 @@ function renderTurningPointPanel(tpData) {
         '崩塌退潮': '#a855f7', '震荡分化': '#9ca3af'
     }[s.current_phase] || '#9ca3af';
 
-    const latestScColor = s.latest_sc < 3 ? '#0ecb81' : s.latest_sc <= 5 ? '#fcd535' : '#f6465d';
-
     let html = `
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
             <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
-                分析区间：<b style="color:#f0b90b;">${s.start_date || '--'}</b>
-                <span style="color:#64748b;"> ~ </span><b style="color:#f0b90b;">${s.end_date || '--'}</b>
+                30日变盘节点: <b style="color:#f0b90b;">${s.turning_point_count ?? 0}</b>
             </span>
             <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
-                交易日：<b style="color:#00b8d9;">${s.days ?? 0}</b>
+                总龙头诞生: <b style="color:#ffd700;">${s.dragon_birth_count ?? 0}</b>
             </span>
             <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
-                最新砸盘：<b style="color:${latestScColor};">${s.latest_sc ?? '--'}</b>
-            </span>
-            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
-                最新最高板：<b style="color:#00b8d9;">${s.latest_max_boards ?? '--'}板</b>
-            </span>
-            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
-                变盘节点：<b style="color:#f0b90b;">${s.turning_point_count ?? 0}</b>
-            </span>
-            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
-                总龙头诞生：<b style="color:#ffd700;">${s.dragon_birth_count ?? 0}</b>
-            </span>
-            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
-                当前周期：<b style="color:${phaseColor};">${s.current_phase || '--'}</b>
+                当前周期: <b style="color:${phaseColor};">${s.current_phase || '--'}</b>
             </span>
         </div>`;
 
     if (births.length) {
-        html += `<div style="color:#ffd700;font-weight:600;margin:6px 0 8px;font-size:0.95rem;">⭐ 总龙头诞生节点（命中后自动微信推送）</div>`;
-        html += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:14px;">`;
+        html += `<div style="margin-bottom:12px;"><div style="color:#ffd700;font-weight:600;margin-bottom:6px;font-size:0.9rem;">⭐ 总龙头诞生节点</div>`;
         births.forEach(n => {
             const d = n.dragon;
-            const lvlCls = ({ SS: 'background:#f6465d;color:#fff;', S: 'background:#f0b90b;color:#0b1020;', A: 'background:#00b8d9;color:#fff;', B: 'background:#64748b;color:#fff;' })[d.level] || 'background:#64748b;color:#fff;';
-            html += `<div style="background:linear-gradient(90deg,rgba(255,215,0,0.10),rgba(255,215,0,0.02));border-left:4px solid #ffd700;border-radius:10px;padding:12px 14px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                    <span style="color:#ffd700;font-weight:700;font-size:0.92rem;">${n.date}</span>
-                    <span style="padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:700;${lvlCls}">${d.level}级 · ${d.score}分</span>
-                </div>
-                <div style="font-size:1.02rem;font-weight:600;color:#fff;">${d.name} <span style="color:#94a3b8;font-size:0.82rem;font-weight:400;">${d.code}</span></div>
-                <div style="color:#94a3b8;font-size:0.82rem;line-height:1.6;margin-top:2px;">
-                    ${d.boards}板 · ${d.lifecycle} · 概念：${d.concept || '--'}<br>
-                    大盘：${n.phase} · 砸盘${n.sc} · 最高${n.max_boards}板
-                </div>
-                <div style="color:#84cc16;font-size:0.82rem;margin-top:6px;">🎯 ${n.trigger}</div>
+            html += `<div style="background:linear-gradient(90deg,rgba(255,215,0,0.12),transparent);border-left:3px solid #ffd70b;padding:8px 12px;margin-bottom:6px;border-radius:4px;font-size:0.85rem;">
+                <b style="color:#ffd700;">${n.date}</b> · ${d.name}(${d.code}) <span style="color:#f0b90b;">${d.level}级${d.score}分</span> ${d.boards}板
+                <div style="color:#9ca3af;font-size:0.78rem;margin-top:2px;">${n.trigger} · 大盘${n.phase} · 砸盘${n.sc} · ${n.max_boards}板</div>
             </div>`;
         });
         html += `</div>`;
     }
 
     if (recent.length) {
-        html += `<div style="color:#e5e7eb;font-weight:600;margin:10px 0 6px;font-size:0.95rem;">📊 近期变盘节点明细（空仓信号将通过微信提醒）</div>`;
-        html += `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.84rem;color:#cbd5e1;">
-            <thead><tr style="background:#1e293b;">
-                <th style="padding:8px 10px;text-align:left;color:#f0b90b;">日期</th>
-                <th style="padding:8px 10px;text-align:left;color:#f0b90b;">类型</th>
-                <th style="padding:8px 10px;text-align:left;color:#f0b90b;">强度</th>
-                <th style="padding:8px 10px;text-align:left;color:#f0b90b;">信号</th>
-                <th style="padding:8px 10px;text-align:left;color:#f0b90b;">细节</th>
-                <th style="padding:8px 10px;text-align:left;color:#f0b90b;">当日龙头</th>
-            </tr></thead><tbody>`;
+        html += `<div><div style="color:#e5e7eb;font-weight:600;margin-bottom:6px;font-size:0.9rem;">📊 最近变盘节点</div>`;
         recent.forEach(tp => {
-            const typeMap = {
-                bottom: ['🌱 冰点见底', 'rgba(14,203,129,0.2)', '#0ecb81'],
-                breakout: ['🚀 突破加速', 'rgba(0,184,217,0.2)', '#00b8d9'],
-                top: ['⚠️ 见顶空仓', 'rgba(246,70,93,0.2)', '#f6465d']
-            };
-            const [typeLabel, bg, fg] = typeMap[tp.type] || ['--', 'transparent', '#999'];
-            const sevLabel = tp.severity === 'strong' ? '强信号' : '中信号';
-            const sevBg = tp.severity === 'strong' ? 'rgba(240,185,11,0.2)' : 'rgba(100,116,139,0.3)';
-            const sevFg = tp.severity === 'strong' ? '#f0b90b' : '#cbd5e1';
-            const dragonCell = tp.dragon_name
-                ? `<span style="color:#f0b90b;">🏆 ${tp.dragon_name}</span> <span style="color:#64748b;">(${tp.dragon_level})</span>`
-                : (tp.type === 'top' ? '<span style="color:#f6465d;">建议空仓</span>' : '--');
-            html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
-                <td style="padding:8px 10px;color:#94a3b8;white-space:nowrap;">${tp.date}</td>
-                <td style="padding:8px 10px;"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:600;background:${bg};color:${fg};">${typeLabel}</span></td>
-                <td style="padding:8px 10px;"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:600;background:${sevBg};color:${sevFg};">${sevLabel}</span></td>
-                <td style="padding:8px 10px;color:#e5e7eb;font-weight:600;">${tp.name}</td>
-                <td style="padding:8px 10px;color:#94a3b8;">${tp.detail}</td>
-                <td style="padding:8px 10px;white-space:nowrap;">${dragonCell}</td>
-            </tr>`;
+            const st = TP_STYLE[tp.type] || { color: '#999', icon: '•' };
+            const dragonTag = tp.dragon_name
+                ? `<span style="color:#f0b90b;margin-left:8px;">🏆 ${tp.dragon_name}(${tp.dragon_level})</span>` : '';
+            html += `<div style="border-left:3px solid ${st.color};padding:6px 10px;margin-bottom:4px;background:rgba(255,255,255,0.02);border-radius:3px;font-size:0.82rem;">
+                <span style="color:#9ca3af;">${tp.date}</span>
+                <span style="color:${st.color};font-weight:600;margin:0 6px;">${st.icon} ${tp.name}</span>
+                <span style="color:#cbd5e1;">${tp.detail}</span>${dragonTag}
+            </div>`;
         });
-        html += `</tbody></table></div>`;
+        html += `</div>`;
     }
 
     panel.innerHTML = html;
@@ -672,7 +577,7 @@ function pollRecommendStatus(taskId) {
             document.getElementById('rec-spinner').style.display = 'none'; 
             resetRecBtn(); 
             if (d.result) showRecommendResults(d.result);
-            console.log('推荐任务完成，结果:', d.result); // 添加日志
+            console.log('推荐任务完成，结果:', d.result);
         }
         else if (d.status === 'error') { 
             clearInterval(recPollTimer); 
@@ -694,11 +599,9 @@ function getConfidenceBadge(level) {
     return `<span class="rec-stock-tag" style="${style};border:1px solid;border-radius:4px;padding:2px 8px;font-size:0.8rem">${names[level] || level+'级'}</span>`;
 }
 
-// ★★★ 修复：showRecommendResults 函数，确保所有字段都有默认值 ★★★
 function showRecommendResults(result) {
     document.getElementById('recommend-results').style.display = 'block';
     
-    // ★★★ 强制补全推荐数据中的缺失字段 ★★★
     const recs = (result.recommendations || []).map(r => ({
         ...r,
         confidence_level: r.confidence_level || 'C',
@@ -717,9 +620,7 @@ function showRecommendResults(result) {
         reason: r.reason || '暂无详细理由'
     }));
     
-    // 市场状态
     const ms = result.market_state || {};
-    // 出击建议
     const actionAdvice = ms.action_advice || '';
     const actionHtml = actionAdvice ? `
         <div style="grid-column:1/-1;background:rgba(240,185,11,0.08);border:1px solid rgba(240,185,11,0.3);border-radius:8px;padding:10px 14px;margin:4px 0">
@@ -737,7 +638,6 @@ function showRecommendResults(result) {
         <div class="market-state-item"><span class="market-state-label">市场情绪</span><span class="market-state-value">${ms.sentiment || '--'}</span></div>
         <div class="market-state-item"><span class="market-state-label">热门概念</span><span class="market-state-value" style="font-size:0.8rem">${(ms.hot_concepts_top5 || []).join(', ') || '--'}</span></div>
     `;
-    // 次日策略
     const ns = result.next_day_strategy || {};
     document.getElementById('rec-next-strategy').innerHTML = `
         <div class="strategy-section"><div class="strategy-label"><i class="bi bi-compass"></i> 整体策略</div><div class="strategy-text">${ns.overall_strategy || '--'}</div></div>
@@ -747,7 +647,6 @@ function showRecommendResults(result) {
         </div>
         <div class="strategy-section"><div class="strategy-label"><i class="bi bi-shield-exclamation"></i> 风控要点</div><div class="strategy-text">${ns.risk_control || '--'}</div></div>
     `;
-    // 推荐个股（使用补全后的 recs）
     let stockHtml = '';
     if (recs.length === 0) {
         stockHtml = `
@@ -759,14 +658,12 @@ function showRecommendResults(result) {
             </div>`;
     } else {
         recs.forEach((r, idx) => {
-            // 使用补全后的安全字段
             const confLevel = r.confidence_level;
             const confName = r.confidence_name;
             const histWinRate = r.historical_win_rate;
             const condMatch = r.condition_match;
             const dimScores = r.dimension_scores || {};
             
-            // 维度条
             let dimBarsHtml = Object.entries(dimScores).map(([dim, val]) => {
                 const color = val >= 70 ? 'var(--green)' : val >= 50 ? 'var(--yellow)' : 'var(--red)';
                 return `<div class="dim-score-bar"><span class="dim-score-label">${dimLabels[dim] || dim}</span><div class="dim-score-track"><div class="dim-score-fill" style="width:${val}%;background:${color}"></div></div><span class="dim-score-val">${val}</span></div>`;
@@ -798,16 +695,13 @@ function showRecommendResults(result) {
         });
     }
     document.getElementById('rec-stock-list').innerHTML = stockHtml;
-    // 雷达图（使用补全后的 recs）
     renderRadarChart(recs);
-    // 出场信号面板
     loadExitSignals();
 }
 
 function renderRadarChart(recs) {
     const ctx = document.getElementById('radarChart');
     if (radarChartInstance) radarChartInstance.destroy();
-    // ★★★ 空数组保护 ★★★
     if (!recs || recs.length === 0) {
         console.warn('雷达图无数据，跳过渲染');
         return;
@@ -859,7 +753,6 @@ function renderExitSignals(data) {
     const stocks = data.stock_advices || [];
     const action = data.overall_action || 'NORMAL';
     
-    // 综合行动横幅
     const actionConfig = {
         'CLEAR_ALL': { icon: '🔴', text: '清仓观望', bg: 'rgba(239,83,80,0.12)', border: 'rgba(239,83,80,0.4)', color: '#ef5350' },
         'REDUCE':    { icon: '🟠', text: '减仓防守', bg: 'rgba(255,152,0,0.12)', border: 'rgba(255,152,0,0.4)', color: '#ff9800' },
@@ -868,7 +761,6 @@ function renderExitSignals(data) {
     };
     const ac = actionConfig[action] || actionConfig['NORMAL'];
     
-    // 市场信号
     const marketSignals = market.market_signals || [];
     let marketHtml = '';
     if (marketSignals.length > 0) {
@@ -886,7 +778,6 @@ function renderExitSignals(data) {
         marketHtml = '<div style="color:#0ecb81;font-size:0.8rem;padding:8px"><i class="bi bi-check-circle-fill"></i> 市场无明显风险信号</div>';
     }
     
-    // 个股出场信号（只显示有信号的）
     let stockHtml = '';
     const riskyStocks = stocks.filter(s => s.exit_signals && s.exit_signals.length > 0);
     if (riskyStocks.length > 0) {
@@ -971,13 +862,11 @@ function showTrackResults(result) {
     document.getElementById('track-results').style.display = 'block';
     const tracking = result.tracking || {};
     const signals = result.signals || {};
-    // 胜率仪表盘
     const cumWR = tracking.cumulative_win_rate || 0;
     document.getElementById('track-winrate').textContent = formatPercent(cumWR);
     document.getElementById('track-total-rec').textContent = result.cumulative?.total_recommendations || tracking.recommendations_count || '--';
     document.getElementById('track-total-correct').textContent = result.cumulative?.total_correct || tracking.correct_count || '--';
     document.getElementById('track-daily-winrate').textContent = formatPercent(tracking.win_rate);
-    // 对比表
     const details = tracking.details || [];
     const tbody = document.getElementById('track-detail-body');
     if (details.length === 0) { tbody.innerHTML = '<tr><td colspan="6" class="text-muted">当日无推荐记录</td></tr>'; }
@@ -987,7 +876,6 @@ function showTrackResults(result) {
             return `<tr><td>${d.code}</td><td>${d.name}</td><td>${formatNumber(d.score, 1)}</td><td>${d.suggested_action || '--'}</td><td>${d.result_desc || '--'}</td><td>${mark}</td></tr>`;
         }).join('');
     }
-    // 信号面板
     const signalDefs = {1:'龙头断板反转',2:'砸盘系数骤降',3:'概念集中度爆发',4:'炸板率飙升',5:'连板梯队断层',6:'情绪冰点反转',7:'龙头加速',8:'高低切换'};
     const triggered = (signals.triggered || []).map(s => s.signal_id);
     const panel = document.getElementById('track-signal-panel');
@@ -1029,12 +917,10 @@ function showUpgradeResults(result) {
     const accuracy = result.accuracy || {};
     const weightAdj = result.weight_adjust || {};
     const regime = result.regime || {};
-    // 准确性概览
     document.getElementById('upg-total-rec').textContent = accuracy.total_recommendations || '--';
     document.getElementById('upg-winrate').textContent = formatPercent(accuracy.overall_win_rate);
     const period = accuracy.period || [];
     document.getElementById('upg-period').textContent = period.length >= 2 ? `${period[0]} ~ ${period[1]}` : '--';
-    // 权重可视化
     const oldW = weightAdj.old_weights || {};
     const newW = weightAdj.new_weights || {};
     let weightsHtml = '';
@@ -1046,9 +932,7 @@ function showUpgradeResults(result) {
         weightsHtml += `<div class="weight-slider-group"><div class="weight-slider-label"><span class="weight-slider-name">${dimLabels[dim] || dim}</span><span class="weight-slider-val">${newVal.toFixed(3)} ${arrow}</span></div><div class="dim-score-track"><div class="dim-score-fill" style="width:${newVal*100}%;background:${changed ? 'var(--cyan)' : 'var(--gold)'}"></div></div></div>`;
     });
     document.getElementById('upg-weights-display').innerHTML = weightsHtml;
-    // 权重对比图
     renderWeightCompare(oldW, newW);
-    // 风格检测
     const regimeHtml = `
         <div class="row g-3">
             <div class="col-md-4 text-center"><div class="card-label">当前风格</div><div class="regime-badge current" style="margin-top:0.5rem">${regime.current_regime || '--'}</div></div>
@@ -1058,7 +942,6 @@ function showUpgradeResults(result) {
         ${(regime.evidence || []).length > 0 ? `<div style="margin-top:1rem"><div class="strategy-label">检测依据</div>${regime.evidence.map(e => `<div class="strategy-text">• ${e}</div>`).join('')}</div>` : ''}
     `;
     document.getElementById('upg-regime-display').innerHTML = regimeHtml;
-    // 加载升级日志
     loadUpgradeLogs();
 }
 
@@ -1092,7 +975,6 @@ function renderWeightAdjustHistory(history) {
         weightAdjHistInstance = new Chart(ctx, { type: 'line', data: { labels: ['暂无历史'], datasets: [] }, options: { responsive: true, maintainAspectRatio: false } });
         return;
     }
-    // 按日期分组
     const dateMap = {};
     history.reverse().forEach(h => {
         const d = h.adjust_date;
@@ -1192,7 +1074,6 @@ async function runSimulate() {
     document.getElementById('simulate-progress').style.display = 'block';
     document.getElementById('simulate-results').style.display = 'none';
 
-    // 收集参数
     const startDate = document.getElementById('sim-start-date').value;
     const endDate = document.getElementById('sim-end-date').value;
     const initCash = parseFloat(document.getElementById('sim-init-cash').value) * 10000;
@@ -1254,7 +1135,6 @@ function resetSimBtn() {
 
 function showSimulateResults(result) {
     document.getElementById('simulate-results').style.display = 'block';
-    // 统计指标
     const totalReturn = (result.total_return * 100).toFixed(2);
     const annualReturn = (result.annual_return * 100).toFixed(2);
     const maxDrawdown = (result.max_drawdown * 100).toFixed(2);
@@ -1277,10 +1157,8 @@ function showSimulateResults(result) {
     `;
     document.getElementById('simulate-results').innerHTML = html;
 
-    // 净值曲线
     renderNetChart(result.net_values);
 
-    // 交易明细
     const trades = result.trades || [];
     const tbody = document.getElementById('sim-trade-body');
     if (trades.length === 0) {
@@ -1466,6 +1344,187 @@ function showQuantBacktest(data) {
         </div>
         <div style="margin-top:10px;font-size:0.8rem;color:#9ca3af">回测区间 ${data.start_date} ~ ${data.end_date}</div>
     `;
+}
+
+// ============ 变盘监测（嵌入仪表盘） ============
+let turningChartInstance = null;
+
+async function loadTurningData() {
+    try {
+        const resp = await fetchJSON('/api/turning_points?days=30');
+        if (!resp.success) return;
+        const data = resp.data;
+        renderTurningStats(data.summary);
+        renderTurningChart(data.series, data.dragon_birth_nodes);
+        renderDragonBirthCards(data.dragon_birth_nodes);
+        renderTurningPointsTable(data.turning_points);
+    } catch (e) {
+        console.error('变盘数据加载失败:', e);
+    }
+}
+
+function renderTurningStats(summary) {
+    const container = document.getElementById('turning-stats');
+    if (!summary) return;
+    container.innerHTML = `
+        <div class="col-2 col-md-2"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">区间</div><div style="font-size:0.8rem;">${summary.start_date}<br>至 ${summary.end_date}</div></div></div></div>
+        <div class="col-2 col-md-2"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">交易日</div><div style="font-size:1.2rem;color:#22d3ee;">${summary.days}</div></div></div></div>
+        <div class="col-2 col-md-2"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">最新砸盘</div><div style="font-size:1.2rem;${summary.latest_sc < 3 ? 'color:#0ecb81;' : summary.latest_sc <= 5 ? 'color:#fcd535;' : 'color:#f6465d;'}">${summary.latest_sc}</div></div></div></div>
+        <div class="col-2 col-md-2"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">最高板</div><div style="font-size:1.2rem;color:#22d3ee;">${summary.latest_max_boards}板</div></div></div></div>
+        <div class="col-2 col-md-2"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">变盘节点</div><div style="font-size:1.2rem;">${summary.turning_point_count}</div></div></div></div>
+        <div class="col-2 col-md-2"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">龙头诞生</div><div style="font-size:1.2rem;color:#ffd700;">${summary.dragon_birth_count}</div></div></div></div>
+    `;
+}
+
+function renderTurningChart(series, birthNodes) {
+    const ctx = document.getElementById('turningChart');
+    if (turningChartInstance) turningChartInstance.destroy();
+
+    const dates = series.map(d => d.date);
+    const scData = series.map(d => d.sc);
+    const boardData = series.map(d => d.max_boards);
+
+    const birthSet = new Set(birthNodes.map(n => n.date));
+
+    turningChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: dates,
+            datasets: [
+                {
+                    type: 'bar',
+                    label: '最高连板',
+                    data: boardData,
+                    backgroundColor: 'rgba(0,184,217,0.25)',
+                    borderColor: 'rgba(0,184,217,0.8)',
+                    borderWidth: 1,
+                    yAxisID: 'y1',
+                    order: 2,
+                    barPercentage: 0.6,
+                },
+                {
+                    type: 'line',
+                    label: '砸盘系数',
+                    data: scData,
+                    borderColor: '#f0b90b',
+                    backgroundColor: 'rgba(240,185,11,0.12)',
+                    tension: 0.3,
+                    fill: true,
+                    borderWidth: 2.5,
+                    yAxisID: 'y',
+                    order: 1,
+                    pointBackgroundColor: scData.map(v => v < 3 ? '#0ecb81' : v <= 5 ? '#fcd535' : '#f6465d'),
+                    pointRadius: scData.map((v, i) => birthSet.has(dates[i]) ? 8 : 4),
+                    pointStyle: scData.map((v, i) => birthSet.has(dates[i]) ? 'star' : 'circle'),
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { labels: { color: '#e5e7eb' } },
+                tooltip: {
+                    backgroundColor: 'rgba(20,25,35,0.95)',
+                    borderColor: '#f0b90b',
+                    borderWidth: 1,
+                    titleColor: '#f0b90b',
+                    bodyColor: '#e5e7eb',
+                    callbacks: {
+                        afterBody: function(items) {
+                            const idx = items[0].dataIndex;
+                            const d = series[idx];
+                            const lines = [];
+                            if (d.signals && d.signals.length) {
+                                lines.push('── 变盘信号 ──');
+                                d.signals.forEach(s => {
+                                    const icon = s.type === 'bottom' ? '🌱' : s.type === 'breakout' ? '🚀' : '⚠';
+                                    lines.push(`${icon} [${s.severity}] ${s.name}: ${s.detail}`);
+                                });
+                            }
+                            if (birthSet.has(d.date)) {
+                                const node = birthNodes.find(n => n.date === d.date);
+                                if (node) {
+                                    const dd = node.dragon;
+                                    lines.push(`⭐ 新总龙头: ${dd.name}(${dd.code}) ${dd.level}级 ${dd.boards}板`);
+                                    lines.push(`   触发: ${node.trigger}`);
+                                }
+                            }
+                            return lines;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#9ca3af', maxRotation: 45, font: { size: 10 } },
+                    grid: { color: 'rgba(45,55,72,0.3)' }
+                },
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    title: { display: true, text: '砸盘系数', color: '#f0b90b' },
+                    ticks: { color: '#f0b90b' },
+                    grid: { color: 'rgba(240,185,11,0.08)' },
+                    suggestedMin: 0,
+                    suggestedMax: 10
+                },
+                y1: {
+                    type: 'linear',
+                    position: 'right',
+                    title: { display: true, text: '最高连板(板)', color: '#00b8d9' },
+                    ticks: { color: '#00b8d9', stepSize: 1 },
+                    grid: { drawOnChartArea: false },
+                    suggestedMin: 0,
+                    suggestedMax: 12,
+                }
+            }
+        }
+    });
+}
+
+function renderDragonBirthCards(birthNodes) {
+    const container = document.getElementById('dragon-birth-cards');
+    if (!birthNodes || birthNodes.length === 0) {
+        container.innerHTML = '<div class="text-muted">暂无总龙头诞生节点</div>';
+        return;
+    }
+    container.innerHTML = '<div class="row g-3">' + birthNodes.map(n => {
+        const d = n.dragon;
+        return `<div class="col-md-4 col-lg-3"><div class="card card-dark" style="border-left:3px solid #ffd700;"><div class="card-body">
+            <div class="d-flex justify-content-between"><span class="text-gold">${n.date}</span><span class="badge bg-gold">${d.level}级</span></div>
+            <h6 class="text-light mt-2">${d.name} <span class="text-muted" style="font-size:0.8rem;">${d.code}</span></h6>
+            <div style="font-size:0.85rem;color:#9ca3af;">${d.boards}板 · ${d.lifecycle} · ${d.concept || '--'}</div>
+            <div style="font-size:0.8rem;color:#94a3b8;margin-top:4px;">触发：${n.trigger}</div>
+            <div style="font-size:0.75rem;color:#64748b;">大盘：${n.phase} · 砸盘${n.sc} · ${n.max_boards}板</div>
+        </div></div></div>`;
+    }).join('') + '</div>';
+}
+
+function renderTurningPointsTable(turningPoints) {
+    const tbody = document.getElementById('turning-tbody');
+    if (!turningPoints || turningPoints.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-muted">暂无变盘节点</td></tr>';
+        return;
+    }
+    const sorted = [...turningPoints].reverse();
+    const typeMap = {
+        'bottom': ['🌱 冰点见底', 'tag-bottom'],
+        'breakout': ['🚀 突破加速', 'tag-breakout'],
+        'top': ['⚠️ 高潮见顶', 'tag-top']
+    };
+    tbody.innerHTML = sorted.map(tp => {
+        const [typeLabel, typeCls] = typeMap[tp.type] || ['--', ''];
+        const dragonTag = tp.dragon_name ? `<span style="color:#f0b90b;">🏆 ${tp.dragon_name}(${tp.dragon_level})</span>` : '--';
+        return `<tr>
+            <td style="color:#94a3b8;">${tp.date}</td>
+            <td><span class="tag ${typeCls}">${typeLabel}</span></td>
+            <td><span class="tag ${tp.severity === 'strong' ? 'tag-strong' : 'tag-medium'}">${tp.severity === 'strong' ? '强信号' : '中信号'}</span></td>
+            <td style="color:#e5e7eb;font-weight:600;">${tp.name}</td>
+            <td style="color:#94a3b8;">${tp.detail}</td>
+            <td>${dragonTag}</td>
+        </tr>`;
+    }).join('');
 }
 
 // ============ 初始化 ============
