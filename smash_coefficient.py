@@ -13,6 +13,12 @@ import logging
 import sqlite3
 from collections import Counter
 
+try:
+    from board_calculator import BoardCalculator
+    _HAS_BOARD_CALC = True
+except ImportError:
+    _HAS_BOARD_CALC = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,6 +33,12 @@ class SmashCoefficientCalculator:
     def __init__(self, db):
         self.db = db
         self.db_path = getattr(db, 'db_path', None)
+        self._board_calc = None
+        if _HAS_BOARD_CALC and self.db_path:
+            try:
+                self._board_calc = BoardCalculator(sqlite3.connect(self.db_path))
+            except Exception as e:
+                logger.warning(f"BoardCalculator初始化失败，将使用API字段: {e}")
 
     def _get_limit_up_data(self, date):
         """
@@ -122,9 +134,22 @@ class SmashCoefficientCalculator:
     def _calc_single_date(self, date, prev_date):
         """
         计算单日砸盘系数的核心算法（与 realtime_fetcher 保持一致）
-        使用 xgt_limit_up_detail 表数据
+        优先使用 BoardCalculator 真实连板数，降级使用 API limit_up_days 字段
         """
         try:
+            # 优先使用 BoardCalculator 获取真实板分布
+            if self._board_calc:
+                try:
+                    today_dist_data = self._board_calc.get_daily_board_distribution(date)
+                    prev_dist_data = self._board_calc.get_daily_board_distribution(prev_date)
+                    if today_dist_data:
+                        today_dist = Counter({int(k): int(v) for k, v in today_dist_data.items()})
+                        prev_dist = Counter({int(k): int(v) for k, v in prev_dist_data.items()})
+                        max_boards = self._board_calc.get_daily_max_boards(date)
+                        return self._compute_smash(today_dist, prev_dist, max_boards)
+                except Exception as e:
+                    logger.warning(f"BoardCalculator获取{date}板分布失败，降级API: {e}")
+
             today_stocks = self._get_limit_up_data(date)
             if not today_stocks:
                 return None, None
@@ -133,7 +158,7 @@ class SmashCoefficientCalculator:
             if not prev_stocks:
                 return None, None
 
-            # 提取连板数（使用 limit_up_days 字段）
+            # 提取连板数（降级：使用 limit_up_days 字段）
             today_boards = [int(s.get("limit_up_days", 1) or 1) for s in today_stocks]
             prev_boards = [int(s.get("limit_up_days", 1) or 1) for s in prev_stocks]
 
@@ -141,6 +166,15 @@ class SmashCoefficientCalculator:
             prev_dist = Counter(prev_boards)
 
             max_boards = max(today_boards) if today_boards else 0
+            return self._compute_smash(today_dist, prev_dist, max_boards)
+
+        except Exception as e:
+            logger.error(f"单日砸盘系数计算失败({date}): {e}")
+            return None, None
+
+    def _compute_smash(self, today_dist, prev_dist, max_boards):
+        """从板分布计算砸盘系数（公共逻辑抽取）"""
+        try:
             ratios = []
 
             # 只遍历到当日最高板（与 realtime_fetcher 一致）
@@ -168,7 +202,7 @@ class SmashCoefficientCalculator:
             return smash_coef, max_boards
 
         except Exception as e:
-            logger.error(f"单日砸盘系数计算失败({date}): {e}")
+            logger.error(f"砸盘系数计算失败: {e}")
             return None, None
 
     # ---------- 以下辅助方法保持不变 ----------

@@ -30,6 +30,14 @@ from config import DB_PATH
 from predictor import SentimentStateEngine   # 新增导入，用于统一周期判断
 from db import Database                     # 用于创建 Database 实例
 
+# 真实连板计算器（修正API limit_up_days不可靠问题）
+try:
+    from board_calculator import BoardCalculator
+    _board_calc = BoardCalculator()
+except Exception as e:
+    _board_calc = None
+    logging.getLogger('smart_recommender').warning(f"BoardCalculator加载失败: {e}")
+
 # ─────────────────────────── 日志配置 ───────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -1167,6 +1175,25 @@ def generate_recommendations(date: str, top_n: int = 5,
     all_candidates = limit_up_stocks + break_stocks
     all_candidates = [s for s in all_candidates
                       if s.get('name') and '*ST' not in s['name'] and 'ST' not in s['name']]
+
+    # 用board_calculator覆盖真实连板数（API字段14.6%不匹配）
+    if _board_calc is not None and all_candidates:
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            for s in all_candidates:
+                real = _board_calc.get_consecutive_boards(date, s.get('code', ''), conn)
+                if real and real > 0:
+                    s['api_boards'] = s.get('limit_up_days', 1)
+                    s['limit_up_days'] = real
+            # 同时修正市场最高板
+            real_max = _board_calc.get_daily_max_boards(date, conn)
+            if real_max and real_max > 0:
+                market_state['max_boards'] = real_max
+            conn.close()
+        except Exception as e:
+            logger.warning(f"board_calculator覆盖失败: {e}")
+
     if not all_candidates:
         logger.info(f"[{date}] 无候选股票，返回空推荐")
         return []

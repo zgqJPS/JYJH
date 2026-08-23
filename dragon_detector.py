@@ -35,6 +35,12 @@ from datetime import datetime
 
 from config import DB_PATH
 
+try:
+    from board_calculator import BoardCalculator
+    _HAS_BOARD_CALC = True
+except ImportError:
+    _HAS_BOARD_CALC = False
+
 logger = logging.getLogger('dragon_detector')
 
 # ─────────────────────────── 维度权重 ───────────────────────────
@@ -94,6 +100,32 @@ class DragonDetector:
 
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
+        self._board_calc = None
+        if _HAS_BOARD_CALC:
+            try:
+                conn = sqlite3.connect(db_path)
+                self._board_calc = BoardCalculator(conn)
+            except Exception as e:
+                logger.warning(f"BoardCalculator初始化失败: {e}")
+
+    def _apply_real_boards(self, stocks: List[Dict], date: str) -> List[Dict]:
+        """用BoardCalculator真实连板数覆盖API的limit_up_days字段"""
+        if not self._board_calc or not stocks:
+            return stocks
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            for s in stocks:
+                real = self._board_calc.get_consecutive_boards(date, s['code'], conn)
+                if real > 0:
+                    s['api_limit_up_days'] = s.get('limit_up_days', 1)
+                    s['limit_up_days'] = real
+        except Exception as e:
+            logger.warning(f"真实连板数覆盖失败({date}): {e}")
+        finally:
+            if conn:
+                conn.close()
+        return stocks
 
     # ─────────────────────────── 数据库工具 ───────────────────────────
 
@@ -123,6 +155,8 @@ class DragonDetector:
                 if tr is not None and (tr > 1.0 or tr < 0):
                     stock['turnover_rate'] = 0.15
                 result.append(stock)
+            # 用真实连板数覆盖API字段
+            self._apply_real_boards(result, date)
             return result
         finally:
             conn.close()
@@ -228,7 +262,9 @@ class DragonDetector:
                 FROM xgt_limit_up_detail
                 WHERE date = ?
             """, (prev_date,)).fetchall()
-            return [dict(r) for r in rows]
+            result = [dict(r) for r in rows]
+            self._apply_real_boards(result, prev_date)
+            return result
         finally:
             conn.close()
 

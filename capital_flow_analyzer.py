@@ -38,6 +38,12 @@ from typing import Dict, List, Optional, Tuple, Any
 
 from config import DB_PATH
 
+try:
+    from board_calculator import BoardCalculator
+    _HAS_BOARD_CALC = True
+except ImportError:
+    _HAS_BOARD_CALC = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -128,6 +134,26 @@ class CapitalFlowAnalyzer:
         self.db_path = db_path
         self.conn = sqlite3.connect(db_path)
         self.conn.row_factory = sqlite3.Row
+        self._board_calc = None
+        if _HAS_BOARD_CALC:
+            try:
+                self._board_calc = BoardCalculator(self.conn)
+            except Exception as e:
+                logger.warning(f"BoardCalculator初始化失败: {e}")
+
+    def _apply_real_boards(self, stocks: List[Dict], date: str) -> List[Dict]:
+        """用BoardCalculator真实连板数覆盖API的limit_up_days字段"""
+        if not self._board_calc or not stocks:
+            return stocks
+        try:
+            for s in stocks:
+                real = self._board_calc.get_consecutive_boards(date, s['code'], self.conn)
+                if real > 0:
+                    s['api_limit_up_days'] = s.get('limit_up_days', 1)
+                    s['limit_up_days'] = real
+        except Exception as e:
+            logger.warning(f"真实连板数覆盖失败({date}): {e}")
+        return stocks
 
     def close(self):
         if self.conn:

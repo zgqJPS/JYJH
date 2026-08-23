@@ -21,7 +21,6 @@ from datetime import datetime, timedelta
 tz = zoneinfo.ZoneInfo('Asia/Shanghai')
 now = datetime.now(tz)
 
-
 # 确保项目路径在 sys.path
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_DIR)
@@ -110,28 +109,134 @@ logger = logging.getLogger("web")
 def send_recommend_notification(date_str, recommendations, market_state, next_day):
     if not notifier:
         return False
-    title = f"📊 智能推荐 - {date_str}"
-    lines = [f"## 市场状态\n"]
-    lines.append(f"- 周期: {market_state.get('cycle_phase', '未知')}")
-    lines.append(f"- 砸盘系数: {market_state.get('smash_coefficient', '--')}")
-    lines.append(f"- 涨停数: {market_state.get('limit_up_count', 0)}")
-    lines.append(f"- 最高连板: {market_state.get('max_boards', 0)}")
-    lines.append(f"- 情绪: {market_state.get('sentiment', '')}")
+    title = f"📊 {date_str} 盘后策略"
+    lines = []
+
+    # ── 1. 市场全景 ──
+    lines.append("## 🎯 市场全景\n")
+    cycle = market_state.get('cycle_phase', '未知')
+    sc = market_state.get('smash_coefficient')
+    sc_str = f"{sc:.2f}" if isinstance(sc, (int, float)) else '--'
+    if isinstance(sc, (int, float)):
+        if sc < 3:
+            sc_tag = "🟢冰点（易反弹）"
+        elif sc <= 5:
+            sc_tag = "🟡博弈（可操作）"
+        else:
+            sc_tag = "🔴过热（防砸盘）"
+    else:
+        sc_tag = ""
+    lines.append(f"- 周期: **{cycle}** {sc_tag}")
+    lines.append(f"- 砸盘系数: **{sc_str}**")
+    lines.append(f"- 涨停/跌停: **{market_state.get('limit_up_count', 0)} / {market_state.get('limit_down_count', 0)}**")
+    lines.append(f"- 最高连板: **{market_state.get('max_boards', 0)}板**")
+    lines.append(f"- 炸板率: {market_state.get('explosion_rate', 0):.0%}")
+    sentiment = market_state.get('sentiment', '')
+    if sentiment:
+        lines.append(f"- 情绪: {sentiment}")
     lines.append("")
+
+    # ── 2. 次日操作策略 ──
     if next_day:
-        lines.append("## 次日策略\n")
-        lines.append(f"- 目标高度: {next_day.get('target_board_height', '')}")
-        lines.append(f"- 关注概念: {', '.join(next_day.get('focus_concepts', []))}")
-        lines.append(f"- 风控: {next_day.get('risk_control', '')}")
-        lines.append(f"- 总体策略: {next_day.get('overall_strategy', '')}\n")
+        lines.append("## 📅 次日策略\n")
+        target_h = next_day.get('target_board_height', '')
+        if target_h:
+            lines.append(f"- 目标高度: {target_h}")
+        focus = next_day.get('focus_concepts', [])
+        if focus:
+            lines.append(f"- 关注题材: **{', '.join(focus[:5])}**")
+        risk = next_day.get('risk_control', '')
+        if risk:
+            lines.append(f"- 风控: {risk}")
+        strategy = next_day.get('overall_strategy', '')
+        if strategy:
+            lines.append(f"- 总策略: {strategy}")
+        lines.append("")
+
+    # ── 3. 进场确定性分析（核心） ──
+    certainty_recs = []
+    try:
+        from entry_certainty_analyzer import EntryCertaintyAnalyzer
+        analyzer = EntryCertaintyAnalyzer(DB_PATH)
+        certainty_recs = analyzer.analyze_date(date_str, top_n=10)
+    except Exception as e:
+        logging.warning(f"进场确定性分析失败: {e}")
+
+    if certainty_recs:
+        # 只推 S+/S/A 级
+        actionable = [r for r in certainty_recs
+                      if r['composite']['certainty_grade'] in ('S+', 'S', 'A')]
+        if actionable:
+            lines.append("## 🎯 进场确定性TOP（核心）\n")
+            for i, r in enumerate(actionable[:5], 1):
+                c = r['composite']
+                op = r.get('operation', {})
+                grade = c['certainty_grade']
+                bp = c.get('bayes_probability', 0)
+                grade_icon = {'S+': '🔥', 'S': '⭐', 'A': '✅'}.get(grade, '')
+                lines.append(f"### {i}. {grade_icon} {r['name']}({r['code']}) {grade}级")
+                lines.append(f"- 板数: {r['boards']}板 | 校准胜率: **{bp:.0%}** | 综合分: {c['score']}")
+                if r.get('concept'):
+                    lines.append(f"- 题材: {r['concept']}")
+
+                # 六维摘要
+                dims = r.get('dimensions', {})
+                dim_parts = []
+                for dk, dn in [('seal_quality','封板'), ('positioning','卡位'),
+                               ('theme_strength','题材'), ('turnover_structure','换手'),
+                               ('auction_proxy','竞价'), ('next_day_certainty','推演')]:
+                    dv = dims.get(dk, {})
+                    if dv:
+                        dim_parts.append(f"{dn}{dv.get('grade','')}{dv.get('score',0):.0f}")
+                if dim_parts:
+                    lines.append(f"- 六维: {' | '.join(dim_parts)}")
+
+                # 关键信号
+                sigs = []
+                for dk in ['next_day_certainty', 'seal_quality', 'auction_proxy']:
+                    for s in dims.get(dk, {}).get('signals', [])[:2]:
+                        sigs.append(s)
+                if sigs:
+                    lines.append(f"- 信号: {'; '.join(sigs[:3])}")
+
+                # 操作指令
+                if op:
+                    lines.append(f"- 操作: **{op.get('action_name','')}** | 仓位: **{op.get('position_pct',0)*100:.1f}%**")
+                    lines.append(f"- 时机: {op.get('timing','')}")
+                    price_r = op.get('price_range', '')
+                    if price_r:
+                        lines.append(f"- 价格: {price_r}")
+                    sl = op.get('stop_loss', 0)
+                    tp1 = op.get('take_profit_1', 0)
+                    if sl and tp1:
+                        lines.append(f"- 止损/止盈: {sl:.2f} / {tp1:.2f}")
+                lines.append("")
+
+    # ── 4. 智能推荐（补充） ──
     if recommendations:
-        lines.append("## 🎯 Top推荐\n")
-        for i, r in enumerate(recommendations[:5], 1):
-            lines.append(f"{i}. {r.get('name', '')}({r.get('code', '')})")
-            lines.append(f"   得分: {r.get('total_score', 0)} | 置信度: {r.get('confidence_name', '')}")
-            lines.append(f"   建议: {r.get('suggested_action', '')}")
-            lines.append(f"   理由: {r.get('reason', '')}")
+        # 排除已在进场确定性中的票
+        shown_codes = set(r['code'] for r in (certainty_recs or [])[:5])
+        extra = [r for r in recommendations if r.get('code') not in shown_codes]
+        if extra:
+            lines.append("## 📋 其他关注\n")
+            for i, r in enumerate(extra[:3], 1):
+                wr = r.get('win_rate', 0) or r.get('historical_win_rate', 0)
+                lines.append(f"{i}. **{r.get('name','')}**({r.get('code','')}) "
+                           f"得分{r.get('total_score',0)} 胜率{wr:.0%}")
+                reason = r.get('reason', '')
+                if reason:
+                    lines.append(f"   - {reason[:80]}")
+                risks = r.get('risk_notes', [])
+                if risks:
+                    lines.append(f"   - ⚠️ {'; '.join(risks[:2])}")
             lines.append("")
+
+    # ── 5. 风险提示 ──
+    lines.append("---\n")
+    lines.append("> ⚠️ 以上为系统量化分析，不构成投资建议。"
+                 "校准胜率基于2026年7-8月真实数据回测，不代表未来表现。"
+                 "严格止损，仓位控制。")
+
     content = "\n".join(lines)
     return notifier.send_notification(title, content)
 
@@ -872,6 +977,46 @@ def handle_turning_points(params):
         return {"success": False, "error": str(e)}
 
 
+def handle_entry_certainty(params):
+    """进场确定性深度分析结果。"""
+    try:
+        date_str = params.get("date", [None])[0]
+        top_n = int(params.get("top_n", [20])[0])
+        db = Database(DB_PATH)
+        if date_str:
+            rows = db.fetch_all(
+                "SELECT * FROM entry_certainty_analysis WHERE date=? "
+                "ORDER BY composite_score DESC LIMIT ?",
+                (date_str, top_n))
+        else:
+            date_str = db.fetch_one(
+                "SELECT MAX(date) as d FROM entry_certainty_analysis")
+            date_str = date_str['d'] if date_str else None
+            if not date_str:
+                return {"success": True, "data": {"date": None, "results": []}}
+            rows = db.fetch_all(
+                "SELECT * FROM entry_certainty_analysis WHERE date=? "
+                "ORDER BY composite_score DESC LIMIT ?",
+                (date_str, top_n))
+        db.close()
+        results = []
+        for r in rows:
+            r = dict(r)
+            for k in ('conditions', 'signals', 'risks'):
+                if r.get(k):
+                    try:
+                        r[k] = json.loads(r[k])
+                    except Exception:
+                        r[k] = []
+                else:
+                    r[k] = []
+            results.append(r)
+        return {"success": True, "data": {"date": date_str, "results": results}}
+    except Exception as e:
+        logger.error(f"entry_certainty error: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 def handle_model_health():
     try:
         db = Database(DB_PATH)
@@ -1207,6 +1352,8 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self._json_response(handle_smash_history(params))
             elif path == "/api/turning_points":
                 self._json_response(handle_turning_points(params))
+            elif path == "/api/entry_certainty":
+                self._json_response(handle_entry_certainty(params))
             elif path == "/api/model/health":
                 self._json_response(handle_model_health())
             elif path == "/api/signals":
