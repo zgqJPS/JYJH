@@ -142,7 +142,7 @@ def _fetch_market_indicators_realtime() -> Dict[str, Any]:
 
 
 def _parse_stock_item(item: Dict, pool_name: str) -> Optional[Dict]:
-    """解析单只股票数据"""
+    """解析单只股票数据，并对异常连板数进行修正"""
     try:
         symbol = item.get('symbol', '')
         code = symbol.split('.')[0] if '.' in symbol else symbol
@@ -163,6 +163,15 @@ def _parse_stock_item(item: Dict, pool_name: str) -> Optional[Dict]:
             except:
                 pass
         
+        # 获取原始数据并转为整数
+        limit_up_days = int(item.get('limit_up_days', 1) or 1)
+        break_times = int(item.get('break_limit_up_times', 0) or 0)
+        
+        # ★★★ 核心修正：如果连板数与开板次数相等且大于3，则强制设为1（API错误）★★★
+        if limit_up_days == break_times and limit_up_days > 3:
+            logger.warning(f"[解析] 股票{code} 连板数{limit_up_days}与开板次数{break_times}相等，疑似API数据错误，强制设为1板")
+            limit_up_days = 1
+        
         stock = {
             'code': code,
             'name': item.get('stock_chi_name', ''),
@@ -171,9 +180,9 @@ def _parse_stock_item(item: Dict, pool_name: str) -> Optional[Dict]:
             'turnover_rate': item.get('turnover_ratio', 0) or 0,
             'seal_amount': item.get('buy_lock_volume_ratio', 0) or 0,
             'seal_ratio': item.get('buy_lock_volume_ratio', 0) or 0,
-            'limit_up_days': item.get('limit_up_days', 1) or 1,
+            'limit_up_days': limit_up_days,          # 修正后的连板数
             'first_limit_up_time': first_limit_up_time,
-            'open_times': item.get('break_limit_up_times', 0) or 0,
+            'open_times': break_times,               # 开板次数
             'volume_ratio': item.get('volume_bias_ratio', 1.0) or 1.0,
             'flow_capital': item.get('non_restricted_capital', 0) or 0,
             'total_capital': item.get('total_capital', 0) or 0,
@@ -199,14 +208,6 @@ def _parse_stock_item(item: Dict, pool_name: str) -> Optional[Dict]:
         if stock['flow_capital'] > 1e8:
             stock['flow_capital'] = stock['flow_capital'] / 1e8
         
-        if stock['limit_up_days'] is None:
-            stock['limit_up_days'] = 1
-        else:
-            try:
-                stock['limit_up_days'] = int(stock['limit_up_days'])
-            except (ValueError, TypeError):
-                stock['limit_up_days'] = 1
-        
         return stock
     except Exception as e:
         logger.debug(f"[盯盘] 解析股票数据失败: {e}")
@@ -215,8 +216,7 @@ def _parse_stock_item(item: Dict, pool_name: str) -> Optional[Dict]:
 
 def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
     """
-    将实时数据保存到数据库
-    依赖 db.py 已创建好所有表
+    将实时数据保存到数据库，并在入库后进行异常修正和重新统计。
     """
     import sqlite3
     
@@ -226,7 +226,7 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
     date = data['date']
     
     try:
-        # 1. 保存涨停详情到 xgt_limit_up_detail
+        # 1. 保存涨停详情到 xgt_limit_up_detail（原始数据，但已在解析时修正）
         limit_up_stocks = data['pools'].get('limit_up', [])
         for stock in limit_up_stocks:
             try:
@@ -254,6 +254,17 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                 saved_count += 1
             except Exception as e:
                 logger.warning(f"保存涨停详情失败({stock.get('code', '')}): {e}")
+        
+        # ★★★ 二次修正：批量处理入库后仍存在的异常数据（以防解析阶段遗漏）★★★
+        affected = conn.execute("""
+            UPDATE xgt_limit_up_detail 
+            SET limit_up_days = 1 
+            WHERE date = ? 
+              AND limit_up_days > 3 
+              AND limit_up_days = break_times
+        """, (date,)).rowcount
+        if affected > 0:
+            logger.warning(f"[修正] 批量修正了 {affected} 只股票的异常连板数（limit_up_days == break_times）")
         
         # 2. 保存炸板池
         break_stocks = data['pools'].get('limit_up_broken', [])
@@ -315,22 +326,23 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                     logger.debug(f"保存概念统计失败({concept}): {e}")
             logger.info(f"[概念统计] {date}: 共{len(concept_count)}个概念, TOP3: {sorted(concept_count.items(), key=lambda x: x[1], reverse=True)[:3]}")
         
-        # 5. 每日汇总
+        # 5. 重新统计板分布（因为可能已修正）
+        dist_rows = conn.execute("""
+            SELECT limit_up_days, COUNT(*) as cnt FROM xgt_limit_up_detail 
+            WHERE date = ? GROUP BY limit_up_days
+        """, (date,)).fetchall()
+        board_dist = {r[0]: r[1] for r in dist_rows}
+        max_boards = max(board_dist.keys()) if board_dist else 0
+        
+        # 6. 每日汇总
         indicators = data.get('market_indicators', {})
-        limit_up_count = len(limit_up_stocks)
+        limit_up_count = sum(board_dist.values())
         break_count = len(break_stocks)
         limit_down_count = len(limit_down_stocks)
         explosion_rate = break_count / (limit_up_count + break_count) if (limit_up_count + break_count) > 0 else 0
         rise_count = indicators.get('rise_count', 0) or 0
         fall_count = indicators.get('fall_count', 0) or 0
         rise_fall_ratio = rise_count / fall_count if fall_count > 0 else 1.0
-        
-        board_dist = {}
-        max_boards = 0
-        for stock in limit_up_stocks:
-            days = stock.get('limit_up_days', 1) or 1
-            board_dist[days] = board_dist.get(days, 0) + 1
-            max_boards = max(max_boards, days)
         
         try:
             conn.execute("""
@@ -355,15 +367,15 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
         except Exception as e:
             logger.error(f"保存每日汇总失败: {e}")
         
-        # ========== 修改：砸盘系数计算与存储逻辑（强制写入，即使无前日数据） ==========
+        # 7. 砸盘系数计算（使用修正后的 max_boards）
         try:
-            # 获取前一交易日（用于计算晋升比率）
+            # 获取前一交易日
             prev_row = conn.execute("""
                 SELECT date FROM xgt_limit_up_detail 
                 WHERE date < ? GROUP BY date ORDER BY date DESC LIMIT 1
             """, (date,)).fetchone()
             
-            smash_coeff = None  # 初始化为 None
+            smash_coeff = None
             
             if prev_row:
                 prev_date = prev_row['date'] if isinstance(prev_row, sqlite3.Row) else prev_row[0]
@@ -383,7 +395,6 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                     prev_boards[r['limit_up_days']] = r['cnt']
                 
                 ratios = []
-                # 遍历2到今日最高板
                 max_board = max(today_boards.keys()) if today_boards else 0
                 for n in range(2, max_board + 1):
                     today_n = today_boards.get(n, 0)
@@ -395,7 +406,6 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                     smash_coeff = round(sum(ratios) / len(ratios) * 10, 2)
                     logger.info(f"[砸盘系数] 计算得到 {date}: {smash_coeff} (基于{len(ratios)}个晋升比率, 前日{prev_date})")
                 else:
-                    # 无有效晋升比率，尝试使用简化估算
                     first_board = today_boards.get(1, 1)
                     high_board = sum(today_boards.get(n, 0) for n in range(2, max_board + 1))
                     if first_board > 0:
@@ -404,7 +414,6 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                     else:
                         logger.info(f"[砸盘系数] {date}: 无有效晋升比率，简化估算失败")
             else:
-                # 无前日数据，尝试从最近3天的历史数据估算平均值
                 logger.info(f"[砸盘系数] {date}: 无前日数据，尝试从历史估算")
                 recent_rows = conn.execute("""
                     SELECT smash_coefficient FROM smash_coefficients
@@ -422,16 +431,15 @@ def save_realtime_to_db(db_path: str, data: Dict[str, Any]) -> int:
                 else:
                     logger.info(f"[砸盘系数] {date}: 无历史数据，无法估算")
             
-            # 无论如何，插入一条记录（允许为 NULL）
+            # 写入砸盘系数
             conn.execute("""
                 INSERT OR REPLACE INTO smash_coefficients 
                 (trade_date, smash_coefficient, limit_up_count, max_continuous_days)
                 VALUES (?, ?, ?, ?)
             """, (date, smash_coeff, limit_up_count, max_boards))
-            logger.info(f"[砸盘系数] {date}: 存储值为 {smash_coeff}")
+            logger.info(f"[砸盘系数] {date}: 存储值为 {smash_coeff}, 最高板 {max_boards}")
         except Exception as e:
             logger.warning(f"[砸盘系数] 计算失败(不影响其他数据): {e}")
-        # =================== 修改结束 =====================
         
         conn.commit()
         logger.info(f"[盯盘] 数据已保存到数据库，共{saved_count}条记录")
