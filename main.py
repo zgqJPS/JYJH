@@ -51,6 +51,11 @@ def run_daily(db=None):
         db.init_default_weights()
         close_db = True
     
+    # 初始化报告变量，防止异常时未定义
+    cf_report = ""
+    dragon_report = ""
+    plan_report = ""
+    
     try:
         # 先尝试获取今天的数据（如果数据库中还没有）
         logger.info("Step -1: 检查并获取最新数据...")
@@ -255,6 +260,9 @@ def run_daily(db=None):
             "predictions": predictions,
             "verifications": verifications,
             "corrections": corrections,
+            "capital_flow_report": cf_report,
+            "dragon_report": dragon_report,
+            "plan_report": plan_report,
         }
         
     except Exception as e:

@@ -14,6 +14,7 @@ import requests
 import time
 import zoneinfo
 import schedule
+import re
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
@@ -106,7 +107,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("web")
 
 
-def send_recommend_notification(date_str, recommendations, market_state, next_day):
+# ============ ★ 修改：微信通知函数，增加 daily_result 参数 ============
+def send_recommend_notification(date_str, recommendations, market_state, next_day, daily_result=None):
     if not notifier:
         return False
     title = f"📊 {date_str} 盘后策略"
@@ -153,7 +155,59 @@ def send_recommend_notification(date_str, recommendations, market_state, next_da
             lines.append(f"- 总策略: {strategy}")
         lines.append("")
 
-    # ── 3. 进场确定性分析（核心） ──
+    # ── 3. ★ 新增：资金流分析报告摘要 ──
+    if daily_result:
+        cf_report = daily_result.get("capital_flow_report", "")
+        if cf_report:
+            lines.append("## 💰 资金流快报\n")
+            # 提取关键行
+            cf_lines = cf_report.strip().split('\n')
+            summary_lines = []
+            for line in cf_lines:
+                if '【综合评估】' in line or '仓位系数' in line or '进攻力度' in line or '持续能力' in line or '轮动模式' in line:
+                    # 清理多余空格
+                    clean_line = line.strip()
+                    if clean_line:
+                        summary_lines.append(clean_line)
+                if len(summary_lines) >= 6:
+                    break
+            if summary_lines:
+                for sl in summary_lines:
+                    lines.append(f"- {sl}")
+            lines.append("")
+
+        # ── 4. ★ 新增：龙头识别摘要 ──
+        dragon_report = daily_result.get("dragon_report", "")
+        if dragon_report:
+            # 提取总龙头
+            match = re.search(r'【(\w+)级】(.+?)\((\d+)\)', dragon_report)
+            if match:
+                level, name, code = match.groups()
+                lines.append(f"## 🐉 总龙头：{name}({code}) {level}级\n")
+            # 提取更多龙头信息（前3只）
+            dragon_matches = re.findall(r'【(\w+)级】(.+?)\((\d+)\)', dragon_report)
+            if len(dragon_matches) > 1:
+                lines.append("其他龙头：")
+                for i, (lvl, nm, cd) in enumerate(dragon_matches[1:4], 1):
+                    lines.append(f"  {i}. 【{lvl}级】{nm}({cd})")
+            lines.append("")
+
+        # ── 5. ★ 新增：操作计划摘要 ──
+        plan_report = daily_result.get("plan_report", "")
+        if plan_report:
+            # 统计可操作标的数量
+            operate_matches = re.findall(r'【(\w+)级】', plan_report)
+            if operate_matches:
+                lines.append(f"## 📋 操作计划：{len(operate_matches)}只可操作标的\n")
+                # 提取操作建议摘要
+                action_matches = re.findall(r'│ (?:🎯|🛤️|💰) (.*?):', plan_report)
+                if action_matches:
+                    lines.append("操作策略：")
+                    for am in action_matches[:3]:
+                        lines.append(f"  - {am.strip()}")
+            lines.append("")
+
+    # ── 6. 进场确定性分析（核心） ──
     certainty_recs = []
     try:
         from entry_certainty_analyzer import EntryCertaintyAnalyzer
@@ -163,7 +217,6 @@ def send_recommend_notification(date_str, recommendations, market_state, next_da
         logging.warning(f"进场确定性分析失败: {e}")
 
     if certainty_recs:
-        # 只推 S+/S/A 级
         actionable = [r for r in certainty_recs
                       if r['composite']['certainty_grade'] in ('S+', 'S', 'A')]
         if actionable:
@@ -179,7 +232,6 @@ def send_recommend_notification(date_str, recommendations, market_state, next_da
                 if r.get('concept'):
                     lines.append(f"- 题材: {r['concept']}")
 
-                # 六维摘要
                 dims = r.get('dimensions', {})
                 dim_parts = []
                 for dk, dn in [('seal_quality','封板'), ('positioning','卡位'),
@@ -191,7 +243,6 @@ def send_recommend_notification(date_str, recommendations, market_state, next_da
                 if dim_parts:
                     lines.append(f"- 六维: {' | '.join(dim_parts)}")
 
-                # 关键信号
                 sigs = []
                 for dk in ['next_day_certainty', 'seal_quality', 'auction_proxy']:
                     for s in dims.get(dk, {}).get('signals', [])[:2]:
@@ -199,7 +250,6 @@ def send_recommend_notification(date_str, recommendations, market_state, next_da
                 if sigs:
                     lines.append(f"- 信号: {'; '.join(sigs[:3])}")
 
-                # 操作指令
                 if op:
                     lines.append(f"- 操作: **{op.get('action_name','')}** | 仓位: **{op.get('position_pct',0)*100:.1f}%**")
                     lines.append(f"- 时机: {op.get('timing','')}")
@@ -212,9 +262,8 @@ def send_recommend_notification(date_str, recommendations, market_state, next_da
                         lines.append(f"- 止损/止盈: {sl:.2f} / {tp1:.2f}")
                 lines.append("")
 
-    # ── 4. 智能推荐（补充） ──
+    # ── 7. 智能推荐（补充） ──
     if recommendations:
-        # 排除已在进场确定性中的票
         shown_codes = set(r['code'] for r in (certainty_recs or [])[:5])
         extra = [r for r in recommendations if r.get('code') not in shown_codes]
         if extra:
@@ -231,7 +280,7 @@ def send_recommend_notification(date_str, recommendations, market_state, next_da
                     lines.append(f"   - ⚠️ {'; '.join(risks[:2])}")
             lines.append("")
 
-    # ── 5. 风险提示 ──
+    # ── 8. 风险提示 ──
     lines.append("---\n")
     lines.append("> ⚠️ 以上为系统量化分析，不构成投资建议。"
                  "校准胜率基于2026年7-8月真实数据回测，不代表未来表现。"
@@ -410,7 +459,6 @@ def _run_fetch_task(task_id, params):
                     tasks[task_id]["status"] = "completed"
                     predict_msg = f"（预测{target_date}）" if target_date else ""
                     tasks[task_id]["message"] = f"数据获取成功，基于{data_date}生成{len(rec_serialized)}只个股预测{predict_msg}"
-                # 已移除手动任务中的微信通知发送
             else:
                 with tasks_lock:
                     tasks[task_id]["progress"] = 100
@@ -429,6 +477,7 @@ def _run_fetch_task(task_id, params):
             tasks[task_id]["message"] = f"数据获取成功: {result} 条（智能推荐模块未加载）"
 
 
+# ============ ★ 修改：_run_daily_task 存储报告字段 ============
 def _run_daily_task(task_id):
     from main import run_daily
     with tasks_lock:
@@ -445,6 +494,10 @@ def _run_daily_task(task_id):
                 "analysis": _serialize_analysis(result.get("analysis", {})),
                 "predictions": _serialize_predictions(result.get("predictions", [])),
                 "patterns": result.get("patterns", {}),
+                # ★ 新增报告字段
+                "capital_flow_report": result.get("capital_flow_report", ""),
+                "dragon_report": result.get("dragon_report", ""),
+                "plan_report": result.get("plan_report", ""),
             }
         else:
             tasks[task_id]["result"] = {"error": "分析无结果"}
@@ -473,6 +526,7 @@ def _run_backtest_task(task_id, params):
             tasks[task_id]["result"] = {"error": "回测无结果"}
 
 
+# ============ ★ 修改：_run_recommend_task 执行 run_daily 并返回报告 ============
 def _run_recommend_task(task_id, params):
     if not _smart_recommender:
         with tasks_lock:
@@ -491,6 +545,17 @@ def _run_recommend_task(task_id, params):
                 tasks[task_id]["status"] = "error"
                 tasks[task_id]["message"] = "无法获取最新交易日"
             return
+
+        # ★ 执行完整的每日分析（包含资金流、龙头、操作计划）
+        from main import run_daily
+        daily_result = run_daily()
+        if daily_result:
+            cf_report = daily_result.get("capital_flow_report", "")
+            dragon_report = daily_result.get("dragon_report", "")
+            plan_report = daily_result.get("plan_report", "")
+        else:
+            cf_report = dragon_report = plan_report = ""
+
         market_state = _smart_recommender.analyze_current_market(data_date, DB_PATH)
         recs = _smart_recommender.generate_recommendations(data_date, top_n=top_n, db_path=DB_PATH)
         next_day = _smart_recommender.recommend_for_next_day(data_date, DB_PATH)
@@ -543,8 +608,11 @@ def _run_recommend_task(task_id, params):
                     "risk_control": next_day.get("risk_control", ""),
                     "overall_strategy": next_day.get("overall_strategy", ""),
                 },
+                # ★ 新增报告字段
+                "capital_flow_report": cf_report,
+                "dragon_report": dragon_report,
+                "plan_report": plan_report,
             }
-        # 已移除手动任务中的微信通知发送
     except Exception as e:
         logger.error(f"推荐任务异常: {e}", exc_info=True)
         with tasks_lock:
@@ -778,26 +846,21 @@ def handle_dashboard():
         smash_chart = []
 
         if latest_date:
-            # 执行完整市场分析
             analysis = analyzer.analyze_date(latest_date)
 
             if analysis:
-                # 从分析结果中提取所有数据
                 basic = analysis.get("basic_stats", {})
                 smash_info = analysis.get("smash_analysis", {})
                 sentiment = analysis.get("sentiment_score", 0)
 
-                # 市场周期从砸盘分析中获取（统一使用 cycle_phase_by_smash）
                 cycle_phase = smash_info.get("cycle_phase_by_smash", "")
 
-                # 如果是空，尝试从 daily_snapshot 获取（兼容旧数据）
                 if not cycle_phase:
                     snapshots = db.get_daily_snapshots(limit=1)
                     if snapshots:
                         snap = dict(snapshots[0])
                         cycle_phase = snap.get("cycle_phase", "")
 
-                # 构建摘要数据
                 analysis_summary = {
                     "date": latest_date,
                     "limit_up_count": basic.get("total_count", 0),
@@ -806,7 +869,7 @@ def handle_dashboard():
                     "sentiment_score": sentiment,
                     "avg_seal_amount": basic.get("avg_seal_amount", 0),
                     "cycle_phase": cycle_phase,
-                    "main_concept": "",  # 可从 concept_heat 获取，暂不处理
+                    "main_concept": "",
                     "smash_signal": smash_info.get("signal", ""),
                     "smash_trade_advice": smash_info.get("trade_advice", ""),
                     "smash_trend": smash_info.get("trend", ""),
@@ -816,7 +879,6 @@ def handle_dashboard():
                     "concept_heat": analysis.get("concept_heat", {}),
                 }
 
-                # 生成预测
                 try:
                     kb = KnowledgeBase(db)
                     predictor = Predictor(db, kb)
@@ -825,7 +887,6 @@ def handle_dashboard():
                 except Exception as e:
                     logger.warning(f"预测生成失败: {e}")
 
-        # 获取砸盘系数历史（用于图表，30个交易日）
         smash_history = db.get_smash_coefficient_history(limit=30)
         smash_data = [dict(s) for s in smash_history]
         for s in reversed(smash_data):
@@ -835,7 +896,6 @@ def handle_dashboard():
                 "max_boards": s["max_continuous_boards"]
             })
 
-        # 变盘节点 & 总龙头诞生节点
         turning_points_data = {"series": [], "turning_points": [],
                                "dragon_birth_nodes": [], "summary": {}}
         try:
@@ -965,7 +1025,6 @@ def handle_smash_history(params):
 
 
 def handle_turning_points(params):
-    """变盘节点 & 总龙头诞生节点（30个交易日）。"""
     try:
         days = int(params.get("days", [30])[0])
         days = max(7, min(days, 90))
@@ -978,7 +1037,6 @@ def handle_turning_points(params):
 
 
 def handle_dragon_imminent(params):
-    """龙头即将诞生（次日资金准备）候选数据。"""
     try:
         date_str = params.get("date", [None])[0]
         from turning_point_detector import detect_dragon_imminent
@@ -990,7 +1048,6 @@ def handle_dragon_imminent(params):
 
 
 def handle_entry_certainty(params):
-    """进场确定性深度分析结果。"""
     try:
         date_str = params.get("date", [None])[0]
         top_n = int(params.get("top_n", [20])[0])
@@ -1256,7 +1313,6 @@ def handle_exit_signals(params):
 # ============ 量化策略 API ============
 
 def handle_quant_signals():
-    """获取量化策略信号"""
     try:
         from quant_strategy import QuantStrategyEngine
         db = Database(DB_PATH)
@@ -1275,7 +1331,6 @@ def handle_quant_signals():
 
 
 def handle_quant_backtest(body):
-    """执行量化策略回测"""
     try:
         from quant_strategy import QuantStrategyEngine, QuantBacktester
         data = json.loads(body) if body else {}
@@ -1298,7 +1353,6 @@ def handle_quant_backtest(body):
 
 
 def handle_trade_order(body):
-    """执行交易指令"""
     try:
         from trading_executor import TradingExecutor, TradingChannel
         data = json.loads(body) if body else {}
@@ -1496,6 +1550,7 @@ def run_scheduler():
         time.sleep(60)
 
 
+# ============ ★ 修改：定时任务，获取 daily_result 并传递给通知函数 ============
 def scheduled_fetch_and_recommend():
     today = datetime.now().strftime("%Y-%m-%d")
     is_trading, msg = TradingDayChecker.is_trading_day(today)
@@ -1520,19 +1575,22 @@ def scheduled_fetch_and_recommend():
             logger.warning("定时任务: 无法确定分析日期")
             return
 
-        # 执行龙头识别 + 操作计划 + 资金流（每日完整分析）
+        # ★ 执行完整的每日分析，获取返回结果
+        daily_result = None
         try:
             from main import run_daily
-            run_daily()
+            daily_result = run_daily()
         except Exception as e:
             logger.warning(f"定时任务: run_daily 完整流程失败（降级为仅推荐）: {e}")
 
         if _smart_recommender is None:
             logger.warning("定时任务: 智能推荐模块未加载")
             return
+
         market_state = _smart_recommender.analyze_current_market(data_date, DB_PATH)
         recs = _smart_recommender.generate_recommendations(data_date, top_n=5, db_path=DB_PATH)
         next_day = _smart_recommender.recommend_for_next_day(data_date, DB_PATH)
+
         rec_serialized = []
         for r in recs:
             rec_serialized.append({
@@ -1553,7 +1611,9 @@ def scheduled_fetch_and_recommend():
                 "historical_win_rate": r.get("historical_win_rate", 0.50),
                 "condition_match": r.get("condition_match", ""),
             })
-        send_recommend_notification(data_date, rec_serialized, market_state, next_day)
+
+        # ★ 传递 daily_result 给通知函数
+        send_recommend_notification(data_date, rec_serialized, market_state, next_day, daily_result=daily_result)
         logger.info("定时任务: 微信通知发送完成")
 
         # 检查是否命中"新总龙头诞生节点"，命中则额外推送
@@ -1563,7 +1623,6 @@ def scheduled_fetch_and_recommend():
                 check_latest_risk_and_notify,
                 check_dragon_imminent_and_notify,
             )
-            # 1) 龙头即将诞生（提前资金准备）—— 优先推送，避免被诞生通知覆盖
             imminent = check_dragon_imminent_and_notify(notifier=notifier)
             if imminent and not imminent.get("skipped"):
                 top = imminent["candidates"][0]
@@ -1571,14 +1630,12 @@ def scheduled_fetch_and_recommend():
                     f"定时任务: 🚀龙头即将诞生预警已推送 - "
                     f"{top['name']}({top['boards']}板)等{len(imminent['candidates'])}只候选"
                 )
-            # 2) 总龙头正式诞生
             birth_node = check_latest_and_notify(notifier=notifier)
             if birth_node:
                 logger.info(
                     f"定时任务: 🐉新总龙头诞生节点已推送 - "
                     f"{birth_node['dragon']['name']}({birth_node['dragon']['code']})"
                 )
-            # 3) 大盘变盘空仓信号（见顶/崩塌）：强 top 信号触发空仓预警
             risk_node = check_latest_risk_and_notify(notifier=notifier)
             if risk_node and not risk_node.get("skipped"):
                 sig = risk_node["signal"]
@@ -1601,14 +1658,12 @@ class ReuseHTTPServer(HTTPServer):
 def main():
     print("=" * 70)
     print("[*] 市场分析系统 V6 (增强部署版)")
-    # 打印当前服务器时间用于调试
     print(f"[TIME] 当前服务器时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S %Z')}")
     print("=" * 70)
 
     create_templates()
     print("[OK] 模板文件已准备")
 
-    # 初始化数据库表
     try:
         db = Database(DB_PATH)
         db.init_new_tables()
@@ -1618,7 +1673,6 @@ def main():
     except Exception as e:
         print(f"[WARN] 数据库初始化失败: {e}")
 
-    # 交易日定时任务：多个时间点
     try:
         schedule.every().day.at("09:25").do(scheduled_fetch_and_recommend)
         schedule.every().day.at("09:46").do(scheduled_fetch_and_recommend)
