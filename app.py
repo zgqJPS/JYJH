@@ -977,6 +977,18 @@ def handle_turning_points(params):
         return {"success": False, "error": str(e)}
 
 
+def handle_dragon_imminent(params):
+    """龙头即将诞生（次日资金准备）候选数据。"""
+    try:
+        date_str = params.get("date", [None])[0]
+        from turning_point_detector import detect_dragon_imminent
+        result = detect_dragon_imminent(date_str)
+        return {"success": True, "data": result}
+    except Exception as e:
+        logger.error(f"dragon_imminent error: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 def handle_entry_certainty(params):
     """进场确定性深度分析结果。"""
     try:
@@ -1352,6 +1364,8 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self._json_response(handle_smash_history(params))
             elif path == "/api/turning_points":
                 self._json_response(handle_turning_points(params))
+            elif path == "/api/dragon_imminent":
+                self._json_response(handle_dragon_imminent(params))
             elif path == "/api/entry_certainty":
                 self._json_response(handle_entry_certainty(params))
             elif path == "/api/model/health":
@@ -1547,14 +1561,24 @@ def scheduled_fetch_and_recommend():
             from turning_point_detector import (
                 check_latest_and_notify,
                 check_latest_risk_and_notify,
+                check_dragon_imminent_and_notify,
             )
+            # 1) 龙头即将诞生（提前资金准备）—— 优先推送，避免被诞生通知覆盖
+            imminent = check_dragon_imminent_and_notify(notifier=notifier)
+            if imminent and not imminent.get("skipped"):
+                top = imminent["candidates"][0]
+                logger.info(
+                    f"定时任务: 🚀龙头即将诞生预警已推送 - "
+                    f"{top['name']}({top['boards']}板)等{len(imminent['candidates'])}只候选"
+                )
+            # 2) 总龙头正式诞生
             birth_node = check_latest_and_notify(notifier=notifier)
             if birth_node:
                 logger.info(
                     f"定时任务: 🐉新总龙头诞生节点已推送 - "
                     f"{birth_node['dragon']['name']}({birth_node['dragon']['code']})"
                 )
-            # 大盘变盘空仓信号（见顶/崩塌）：强 top 信号触发空仓预警
+            # 3) 大盘变盘空仓信号（见顶/崩塌）：强 top 信号触发空仓预警
             risk_node = check_latest_risk_and_notify(notifier=notifier)
             if risk_node and not risk_node.get("skipped"):
                 sig = risk_node["signal"]

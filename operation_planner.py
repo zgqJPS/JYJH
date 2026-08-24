@@ -31,6 +31,12 @@ from datetime import datetime
 from config import DB_PATH
 from dragon_detector import DragonDetector, DRAGON_TYPES, LIFECYCLE_STAGES, CERTAINTY_LEVELS
 
+try:
+    from board_calculator import BoardCalculator
+    _HAS_BOARD_CALC = True
+except ImportError:
+    _HAS_BOARD_CALC = False
+
 logger = logging.getLogger('operation_planner')
 
 # ─────────────────────────── 仓位决策矩阵 ───────────────────────────
@@ -137,6 +143,13 @@ class OperationPlanner:
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
         self.detector = DragonDetector(db_path)
+        self._board_calc = None
+        if _HAS_BOARD_CALC:
+            try:
+                conn = sqlite3.connect(db_path)
+                self._board_calc = BoardCalculator(conn)
+            except Exception as e:
+                logger.warning(f"BoardCalculator初始化失败: {e}")
 
     def _get_conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -182,7 +195,18 @@ class OperationPlanner:
                 FROM xgt_limit_up_detail
                 WHERE code = ? AND date = ?
             """, (code, date)).fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            d = dict(row)
+            if self._board_calc:
+                try:
+                    real = self._board_calc.get_consecutive_boards(date, code, conn)
+                    if real > 0:
+                        d['api_limit_up_days'] = d.get('limit_up_days', 1)
+                        d['limit_up_days'] = real
+                except Exception:
+                    pass
+            return d
         finally:
             conn.close()
 

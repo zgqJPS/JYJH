@@ -175,11 +175,28 @@ class CapitalFlowAnalyzer:
         result = []
         for r in rows:
             stock = dict(r)
-            # 数据清洗：换手率异常值（>100%）用中性值代替
+            # 换手率归一化：>1视为百分数（如5=5%），>100或负数视为异常
             tr = stock.get('turnover_rate')
-            if tr is not None and (tr > 1.0 or tr < 0):
-                stock['turnover_rate'] = 0.15
+            if tr is not None:
+                try:
+                    tr = float(tr)
+                    if tr > 100 or tr < 0:
+                        stock['turnover_rate'] = 0.15
+                    elif tr > 1.0:
+                        stock['turnover_rate'] = tr / 100.0
+                except (TypeError, ValueError):
+                    stock['turnover_rate'] = 0.15
+            # 首封时间归一化："092500" → "09:25:00"
+            ft = stock.get('first_limit_up_time')
+            if ft and ':' not in str(ft):
+                ft_str = str(ft).strip()
+                if len(ft_str) >= 6:
+                    stock['first_limit_up_time'] = f"{ft_str[:2]}:{ft_str[2:4]}:{ft_str[4:6]}"
+                elif len(ft_str) == 4:
+                    stock['first_limit_up_time'] = f"{ft_str[:2]}:{ft_str[2:]}:00"
             result.append(stock)
+        # 用真实连板数覆盖API字段
+        self._apply_real_boards(result, date)
         return result
 
     def _get_daily_summary(self, date: str) -> Optional[Dict]:
@@ -476,14 +493,21 @@ class CapitalFlowAnalyzer:
         else:
             promo_score = 8
 
-        # 2. 连板高度趋势（20分）
+        # 2. 连板高度趋势（20分）—— 优先使用BoardCalculator真实最高板
         max_boards_series = []
         for d in dates:
-            row = self.conn.execute(
-                "SELECT MAX(limit_up_days) FROM xgt_limit_up_detail WHERE date = ?",
-                (d,)
-            ).fetchone()
-            mb = _safe_int(row[0]) if row and row[0] else 0
+            mb = 0
+            if self._board_calc:
+                try:
+                    mb = self._board_calc.get_daily_max_boards(d, self.conn)
+                except Exception:
+                    mb = 0
+            if mb == 0:
+                row = self.conn.execute(
+                    "SELECT MAX(limit_up_days) FROM xgt_limit_up_detail WHERE date = ?",
+                    (d,)
+                ).fetchone()
+                mb = _safe_int(row[0]) if row and row[0] else 0
             if mb > 0:
                 max_boards_series.append(mb)
 

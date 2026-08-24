@@ -187,6 +187,34 @@ def run_daily(db=None):
         except Exception as e:
             logger.error(f"龙头识别/操作计划异常: {e}", exc_info=True)
 
+        # 7.85 进场确定性深度分析（题材强弱/卡位/换手/竞价/次日推演）
+        logger.info("Step 7.85: 进场确定性深度分析...")
+        try:
+            from entry_certainty_analyzer import (
+                EntryCertaintyAnalyzer, init_tables as eca_init,
+                save_analysis as eca_save, analyze_date as eca_analyze
+            )
+            eca_init(DB_PATH)
+            eca_date, eca_results = eca_analyze(target_date, top_n=20)
+            if eca_results:
+                print("\n" + "=" * 60)
+                print(f"🎯 进场确定性分析（{eca_date}）")
+                print("=" * 60)
+                for r in eca_results[:8]:
+                    c = r['composite']
+                    op = r['operation']
+                    bp = r['dimensions']['next_day_certainty']['details']['bayes_probability']
+                    pos_tag = f" 仓位{op['position_pct']:.0%}" if op['position_pct'] > 0 else ""
+                    print(f"  [{c['certainty_grade']:2s}] {c['score']:5.1f}分 "
+                          f"{r['name']:8s} {r['boards']}板 {r.get('concept','')[:6]:6s} | "
+                          f"次日{bp:.0%} | {op['action_name']}{pos_tag}")
+                logger.info(f"进场确定性分析: {len(eca_results)}只, "
+                           f"S/S+级{sum(1 for r in eca_results if r['composite']['certainty_grade'] in ('S+','S'))}只")
+            else:
+                logger.info("进场确定性分析: 无符合条件的标的")
+        except Exception as e:
+            logger.error(f"进场确定性分析异常: {e}", exc_info=True)
+
         # 7.9 智能推荐（融合龙头识别+资金流分析结果）
         logger.info("Step 7.9: 智能推荐（融合龙头+资金流）...")
         try:
@@ -453,6 +481,7 @@ def clear_day_data(date_str: str) -> int:
         ("dragon_lifecycle", "first_seen_date"),
         ("dragon_cycle_context", "date"),
         ("operation_plans", "plan_date"),
+        ("entry_certainty_analysis", "date"),
         ("capital_flow_analysis", "date"),
         ("capital_flow_concept_tracking", "date"),
         ("cycle_context", "date"),
