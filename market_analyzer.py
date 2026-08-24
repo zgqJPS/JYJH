@@ -6,7 +6,12 @@ market_analyzer.py - 市场分析引擎
 市场周期统一使用 SentimentStateEngine（与 smart_recommender 一致）
 """
 import logging
-from collections import defaultdict, Counter
+from collections import Counter, defaultdict
+
+# ★ 新增导入：用于修正连板数
+import sqlite3
+from config import DB_PATH
+from board_calculator import BoardCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +22,26 @@ class MarketAnalyzer:
     def __init__(self, db):
         self.db = db
         self.db_path = getattr(db, 'db_path', None)
+        # ★ 初始化 BoardCalculator，用于修正真实连板数
+        self.board_calc = None
+        if self.db_path:
+            try:
+                self.board_calc = BoardCalculator(sqlite3.connect(self.db_path))
+            except Exception as e:
+                logger.warning(f"BoardCalculator初始化失败: {e}")
+
+    def _apply_real_boards(self, stocks, date_str):
+        """
+        用 BoardCalculator 的真实连板数覆盖 API 返回的 limit_up_days
+        修正数据源中 limit_up_days 不可靠的问题
+        """
+        if not self.board_calc or not stocks:
+            return stocks
+        for s in stocks:
+            real = self.board_calc.get_consecutive_boards(date_str, s['code'])
+            if real > 0:
+                s['limit_up_days'] = real
+        return stocks
 
     def analyze_date(self, date_str):
         """
@@ -29,6 +54,9 @@ class MarketAnalyzer:
             return None
 
         stocks = [dict(s) for s in stocks]
+
+        # ★ 核心修复：在分析前修正连板数
+        self._apply_real_boards(stocks, date_str)
 
         result = {
             "date": date_str,

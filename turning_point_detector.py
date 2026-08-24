@@ -15,17 +15,28 @@ turning_point_detector.py - 大盘变盘节点与总龙头诞生节点识别
 输出：
   - detect_recent(days=30)：返回最近N日的节点列表，用于仪表盘叠加
   - check_latest_and_notify()：供定时任务调用，若当日命中新龙头诞生节点则微信通知
+  - detect_dragon_imminent()：龙头即将诞生（次日资金准备）候选
+  - check_latest_risk_and_notify()：大盘变盘空仓信号推送
 """
 
 from __future__ import annotations
 
-import os
 import sqlite3
 import logging
-from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
+from datetime import datetime, timedelta
+
+# ★ 关键修复：从 config 导入正确的 DB_PATH ★
+from config import DB_PATH
 
 logger = logging.getLogger("turning_point")
+
+
+def _get_conn(db_path: str = None) -> sqlite3.Connection:
+    """使用 config.DB_PATH 或传入路径"""
+    conn = sqlite3.connect(db_path or DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 def _norm_turnover(v) -> float:
@@ -41,17 +52,6 @@ def _norm_turnover(v) -> float:
         return v
     except Exception:
         return 0.15
-
-DB_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "data", "stock_data.db"
-)
-
-
-def _get_conn(db_path: str = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path or DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 # ============ 信号阈值（来自深度分析报告的实证规律） ============
@@ -80,18 +80,24 @@ def _load_smash_series(conn: sqlite3.Connection, days: int = 60) -> List[Dict]:
 
 
 def _load_dragon_series(conn: sqlite3.Connection, days: int = 60) -> Dict[str, Dict]:
-    """读取每日总龙头（按日期索引）。"""
-    rows = conn.execute(
-        """
-        SELECT detect_date as date, code, name, certainty_level as level,
-               total_score as score, lifecycle_stage as lifecycle,
-               limit_up_days as boards, concept
-        FROM dragon_detections
-        WHERE dragon_type = 'total_dragon'
-        ORDER BY detect_date DESC LIMIT ?
-        """, (days,)
-    ).fetchall()
-    return {r["date"]: dict(r) for r in rows}
+    """读取每日总龙头（按日期索引），若表不存在则返回空字典"""
+    try:
+        rows = conn.execute(
+            """
+            SELECT detect_date as date, code, name, certainty_level as level,
+                   total_score as score, lifecycle_stage as lifecycle,
+                   limit_up_days as boards, concept
+            FROM dragon_detections
+            WHERE dragon_type = 'total_dragon'
+            ORDER BY detect_date DESC LIMIT ?
+            """, (days,)
+        ).fetchall()
+        return {r["date"]: dict(r) for r in rows}
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e):
+            logger.warning("dragon_detections 表不存在，龙头诞生节点将不可用，但变盘节点仍可正常显示")
+            return {}
+        raise
 
 
 # ============ 单节点信号判定 ============
@@ -556,6 +562,37 @@ def _send_dragon_birth_notification(notifier, node: Dict, full_result: Dict) -> 
     return ok
 
 
+def _send_empty_position_notification(notifier, day: Dict, signal: Dict,
+                                      full_result: Dict) -> bool:
+    """发送大盘变盘空仓信号微信。"""
+    s = full_result.get("summary", {})
+    title = f"⚠️ 大盘空仓信号 - {signal['name']}（{day['date']}）"
+    lines = [
+        f"## ⚠️ 大盘变盘空仓预警",
+        "",
+        f"**日期**：{day['date']}",
+        f"**信号**：{signal['name']}（强度：{signal['severity']}）",
+        f"**细节**：{signal['detail']}",
+        "",
+        f"## 📊 大盘状态",
+        f"- 周期阶段：{day.get('phase') or '--'}",
+        f"- 砸盘系数：{day.get('sc')}",
+        f"- 最高连板：{day.get('max_boards')}板",
+        f"- 涨停数：{day.get('limit_up_count') or '--'}",
+        f"- 近30日变盘节点：{s.get('turning_point_count', '--')} 个",
+        "",
+        f"## 🛡️ 操作建议",
+        f"- **降仓/空仓为主**，停止新开仓",
+        f"- 高位连板股（≥6板）坚决止盈/止损",
+        f"- 总仓位建议降至 3 成以下",
+        f"- 等待砸盘系数回落至 3 以下、新冰点见底信号出现后再考虑进场",
+        f"- 若持有龙头，参考其生命周期：climax/decline 阶段应果断离场",
+        "",
+        f"> 风险提示：以上为系统量化信号，不构成投资建议，市场有风险，操作需谨慎。",
+    ]
+    return notifier.send_notification(title, "\n".join(lines))
+
+
 # ============ 龙头即将诞生（次日预备金）预警 ============
 def detect_dragon_imminent(date_str: str = None, db_path: str = None) -> Optional[Dict]:
     """
@@ -827,37 +864,6 @@ def _send_dragon_imminent_notification(notifier, info: Dict) -> bool:
     ])
     content = "\n".join(lines)
     return notifier.send_notification(title, content)
-
-
-def _send_empty_position_notification(notifier, day: Dict, signal: Dict,
-                                      full_result: Dict) -> bool:
-    """发送大盘变盘空仓信号微信。"""
-    s = full_result.get("summary", {})
-    title = f"⚠️ 大盘空仓信号 - {signal['name']}（{day['date']}）"
-    lines = [
-        f"## ⚠️ 大盘变盘空仓预警",
-        "",
-        f"**日期**：{day['date']}",
-        f"**信号**：{signal['name']}（强度：{signal['severity']}）",
-        f"**细节**：{signal['detail']}",
-        "",
-        f"## 📊 大盘状态",
-        f"- 周期阶段：{day.get('phase') or '--'}",
-        f"- 砸盘系数：{day.get('sc')}",
-        f"- 最高连板：{day.get('max_boards')}板",
-        f"- 涨停数：{day.get('limit_up_count') or '--'}",
-        f"- 近30日变盘节点：{s.get('turning_point_count', '--')} 个",
-        "",
-        f"## 🛡️ 操作建议",
-        f"- **降仓/空仓为主**，停止新开仓",
-        f"- 高位连板股（≥6板）坚决止盈/止损",
-        f"- 总仓位建议降至 3 成以下",
-        f"- 等待砸盘系数回落至 3 以下、新冰点见底信号出现后再考虑进场",
-        f"- 若持有龙头，参考其生命周期：climax/decline 阶段应果断离场",
-        "",
-        f"> 风险提示：以上为系统量化信号，不构成投资建议，市场有风险，操作需谨慎。",
-    ]
-    return notifier.send_notification(title, "\n".join(lines))
 
 
 if __name__ == "__main__":

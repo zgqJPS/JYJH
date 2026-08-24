@@ -15,9 +15,10 @@ import logging
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+# ★ 关键修复：从 config 导入正确的 DB_PATH ★
+from config import DB_PATH
 
-DB_PATH = 'data/stock_data.db'
+logger = logging.getLogger(__name__)
 
 # 数据质量分界线：此日期之前的数据为填充/重复数据，不可信
 VALID_DATA_START = '2026-07-01'
@@ -279,7 +280,7 @@ if __name__ == '__main__':
     import sys
     logging.basicConfig(level=logging.INFO)
 
-    db_path = 'data/stock_data.db'
+    db_path = DB_PATH
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 

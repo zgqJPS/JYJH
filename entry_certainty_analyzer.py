@@ -23,6 +23,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 from collections import defaultdict
+from config import DB_PATH
 
 # 导入真实连板计算器
 import sys, os
@@ -31,7 +32,6 @@ from core.board_calculator import BoardCalculator, VALID_DATA_START
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = 'data/stock_data.db'
 
 # ══════════════════════════════════════════════════════════════
 # 实证概率表（2026年7-8月真实数据重新校准，n=2937）

@@ -5,19 +5,18 @@ smash_coefficient.py - 砸盘系数计算模块（核心主导因素）
 - 系数越低 = 晋级率越高 = 市场做多氛围好
 
 核心算法（与 realtime_fetcher 完全一致）：
-- 统计每日各板级的连板分布（limit_up_days）
+- 统计每日各板级的连板分布（使用修正后的 limit_up_days）
 - 计算板级晋升比率：今日N板股票数 / 昨日N-1板股票数（N 从 2 到 当日最高板）
 - 取所有有效比率的平均值，放大10倍得到砸盘系数
+
+★ 修改：直接使用 xgt_limit_up_detail 表中的 limit_up_days（已在入库时修正），
+   不再依赖 BoardCalculator，避免历史污染导致异常高板。
 """
 import logging
 import sqlite3
 from collections import Counter
 
-try:
-    from board_calculator import BoardCalculator
-    _HAS_BOARD_CALC = True
-except ImportError:
-    _HAS_BOARD_CALC = False
+from config import DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +32,10 @@ class SmashCoefficientCalculator:
     def __init__(self, db):
         self.db = db
         self.db_path = getattr(db, 'db_path', None)
-        self._board_calc = None
-        if _HAS_BOARD_CALC and self.db_path:
-            try:
-                self._board_calc = BoardCalculator(sqlite3.connect(self.db_path))
-            except Exception as e:
-                logger.warning(f"BoardCalculator初始化失败，将使用API字段: {e}")
 
     def _get_limit_up_data(self, date):
         """
-        从 xgt_limit_up_detail 表获取涨停数据（与 smart_recommender 同源）
+        从 xgt_limit_up_detail 表获取涨停数据（已修正的 limit_up_days）
         返回股票字典列表，包含 code, name, limit_up_days 等字段
         """
         try:
@@ -66,7 +59,7 @@ class SmashCoefficientCalculator:
                 return [dict(r) for r in rows]
         except Exception as e:
             logger.error(f"从 xgt_limit_up_detail 获取 {date} 数据失败: {e}")
-            # 降级：尝试从 akshare_limit_up 获取（兼容旧数据）
+            # 降级：尝试从 db.get_limit_up_data 获取（兼容旧数据）
             try:
                 stocks = self.db.get_limit_up_data(date)
                 for s in stocks:
@@ -133,23 +126,10 @@ class SmashCoefficientCalculator:
 
     def _calc_single_date(self, date, prev_date):
         """
-        计算单日砸盘系数的核心算法（与 realtime_fetcher 保持一致）
-        优先使用 BoardCalculator 真实连板数，降级使用 API limit_up_days 字段
+        计算单日砸盘系数的核心算法（直接使用表中已修正的 limit_up_days）
+        ★ 不再依赖 BoardCalculator，避免历史污染导致异常高板
         """
         try:
-            # 优先使用 BoardCalculator 获取真实板分布
-            if self._board_calc:
-                try:
-                    today_dist_data = self._board_calc.get_daily_board_distribution(date)
-                    prev_dist_data = self._board_calc.get_daily_board_distribution(prev_date)
-                    if today_dist_data:
-                        today_dist = Counter({int(k): int(v) for k, v in today_dist_data.items()})
-                        prev_dist = Counter({int(k): int(v) for k, v in prev_dist_data.items()})
-                        max_boards = self._board_calc.get_daily_max_boards(date)
-                        return self._compute_smash(today_dist, prev_dist, max_boards)
-                except Exception as e:
-                    logger.warning(f"BoardCalculator获取{date}板分布失败，降级API: {e}")
-
             today_stocks = self._get_limit_up_data(date)
             if not today_stocks:
                 return None, None
@@ -158,7 +138,7 @@ class SmashCoefficientCalculator:
             if not prev_stocks:
                 return None, None
 
-            # 提取连板数（降级：使用 limit_up_days 字段）
+            # 提取连板数（已修正）
             today_boards = [int(s.get("limit_up_days", 1) or 1) for s in today_stocks]
             prev_boards = [int(s.get("limit_up_days", 1) or 1) for s in prev_stocks]
 
