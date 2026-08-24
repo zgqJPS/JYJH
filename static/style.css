@@ -879,13 +879,6 @@ input[type="range"].weight-slider::-webkit-slider-thumb {
     font-size: 0.8rem;
 }
 
-/* ========== 变盘监测标签样式 ========== */
-.tag-bottom { background: rgba(14,203,129,0.2); color: #0ecb81; }
-.tag-breakout { background: rgba(0,184,217,0.2); color: #00b8d9; }
-.tag-top { background: rgba(246,70,93,0.2); color: #f6465d; }
-.tag-strong { background: rgba(240,185,11,0.2); color: #f0b90b; }
-.tag-medium { background: rgba(100,116,139,0.3); color: #cbd5e1; }
-
 /* 响应式 */
 @media (max-width: 768px) {
     .main-content { padding: 0.75rem; }
