@@ -7,7 +7,7 @@ board_calculator.py - 真实连板数计算引擎
 3. 该字段可能表示"近期涨停次数窗口"而非"连续涨停天数"（如001267: 8/4=1板→8/5=4板，不可能连续）
 
 本模块通过遍历个股在xgt_limit_up_detail中的出现记录，结合交易日历，
-计算真实的连续涨停天数。
+计算真实的连续涨停天数，并增加合理性校验，防止历史污染导致误判。
 """
 
 import sqlite3
@@ -44,11 +44,12 @@ class BoardCalculator:
         return c
 
     def _ensure_loaded(self, conn=None):
-        """延迟加载所有交易日和连板映射"""
+        """延迟加载所有交易日和连板映射，同时进行合理性校验"""
         if self._loaded:
             return
 
         c = self._get_conn(conn)
+        # 获取交易日列表
         rows = c.execute(
             "SELECT DISTINCT date FROM xgt_limit_up_detail "
             "WHERE date >= ? ORDER BY date",
@@ -57,34 +58,48 @@ class BoardCalculator:
         self._trading_days = [r[0] for r in rows]
         self._day_idx = {d: i for i, d in enumerate(self._trading_days)}
 
+        # 获取所有股票的所有记录，包含 limit_up_days（API值）用于校验
         all_rows = c.execute(
-            "SELECT date, code FROM xgt_limit_up_detail "
+            "SELECT date, code, limit_up_days FROM xgt_limit_up_detail "
             "WHERE date >= ? ORDER BY code, date",
             (VALID_DATA_START,)
         ).fetchall()
 
+        # 按股票分组
         stock_dates = defaultdict(list)
-        for date, code in all_rows:
-            stock_dates[code].append(date)
+        for date, code, api_boards in all_rows:
+            stock_dates[code].append((date, api_boards))
 
         self._consec_map = {}
-        for code, dates in stock_dates.items():
+        self._daily_max = {}
+        self._daily_board_dist = defaultdict(lambda: defaultdict(int))
+
+        for code, records in stock_dates.items():
+            # 记录按日期排序（已由SQL排序）
             prev_idx = -2
             consec = 0
-            for d in dates:
-                idx = self._day_idx[d]
+            for date, api_boards in records:
+                idx = self._day_idx[date]
                 if idx == prev_idx + 1:
                     consec += 1
                 else:
                     consec = 1
                 prev_idx = idx
-                self._consec_map[(d, code)] = consec
 
-        self._daily_max = {}
-        self._daily_board_dist = defaultdict(lambda: defaultdict(int))
-        for (date, code), cb in self._consec_map.items():
-            self._daily_max[date] = max(self._daily_max.get(date, 0), cb)
-            self._daily_board_dist[date][cb] += 1
+                # ★ 合理性校验：如果计算出的连板数 > 5，但 API 值显示为 1（首板），
+                # 则说明历史数据污染，强制修正为 1
+                if consec > 5 and api_boards == 1:
+                    logger.warning(
+                        f"[修正] 股票 {code} 在 {date} 的连板数计算为 {consec}，"
+                        f"但 API 值为 {api_boards}，强制修正为 1"
+                    )
+                    consec = 1
+
+                self._consec_map[(date, code)] = consec
+
+                # 更新每日最高板和板分布
+                self._daily_max[date] = max(self._daily_max.get(date, 0), consec)
+                self._daily_board_dist[date][consec] += 1
 
         self._loaded = True
         logger.info(
@@ -94,19 +109,19 @@ class BoardCalculator:
 
     def get_consecutive_boards(self, date: str, code: str,
                                 conn: sqlite3.Connection = None) -> int:
-        """获取个股在指定日期的真实连续涨停天数。"""
+        """获取个股在指定日期的真实连续涨停天数（已包含合理性校验）。"""
         self._ensure_loaded(conn)
         return self._consec_map.get((date, code), 0)
 
     def get_daily_max_boards(self, date: str,
                               conn: sqlite3.Connection = None) -> int:
-        """获取指定日期的真实最高连板数"""
+        """获取指定日期的真实最高连板数（已包含合理性校验）。"""
         self._ensure_loaded(conn)
         return self._daily_max.get(date, 0)
 
     def get_daily_board_distribution(self, date: str,
                                       conn: sqlite3.Connection = None) -> Dict[int, int]:
-        """获取指定日期的板分布"""
+        """获取指定日期的板分布（已包含合理性校验）。"""
         self._ensure_loaded(conn)
         return dict(self._daily_board_dist.get(date, {}))
 
