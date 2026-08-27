@@ -526,7 +526,7 @@ def _run_backtest_task(task_id, params):
             tasks[task_id]["result"] = {"error": "回测无结果"}
 
 
-# ============ ★ 修改：_run_recommend_task 执行 run_daily 并返回报告 ============
+# ============ ★ 修改：_run_recommend_task 快速推荐（不跑完整run_daily） ============
 def _run_recommend_task(task_id, params):
     if not _smart_recommender:
         with tasks_lock:
@@ -546,16 +546,7 @@ def _run_recommend_task(task_id, params):
                 tasks[task_id]["message"] = "无法获取最新交易日"
             return
 
-        # ★ 执行完整的每日分析（包含资金流、龙头、操作计划）
-        from main import run_daily
-        daily_result = run_daily()
-        if daily_result:
-            cf_report = daily_result.get("capital_flow_report", "")
-            dragon_report = daily_result.get("dragon_report", "")
-            plan_report = daily_result.get("plan_report", "")
-        else:
-            cf_report = dragon_report = plan_report = ""
-
+        # 快速推荐：直接调用smart_recommender（读取已有DB数据，不跑完整run_daily）
         market_state = _smart_recommender.analyze_current_market(data_date, DB_PATH)
         recs = _smart_recommender.generate_recommendations(data_date, top_n=top_n, db_path=DB_PATH)
         next_day = _smart_recommender.recommend_for_next_day(data_date, DB_PATH)
@@ -579,6 +570,7 @@ def _run_recommend_task(task_id, params):
                 "confidence_name": r.get("confidence_name", "C级·中等"),
                 "historical_win_rate": r.get("historical_win_rate", 0.50),
                 "condition_match": r.get("condition_match", ""),
+                "dragon_info": r.get("dragon_info"),
             })
         with tasks_lock:
             tasks[task_id]["progress"] = 100
@@ -597,8 +589,10 @@ def _run_recommend_task(task_id, params):
                     "hot_concepts_top5": market_state.get("hot_concepts_top5", []),
                     "max_boards": market_state.get("max_boards", 0),
                     "limit_up_count": market_state.get("limit_up_count", 0),
+                    "limit_down_count": market_state.get("limit_down_count", 0),
                     "sentiment": market_state.get("sentiment", ""),
                     "cap_preference": market_state.get("cap_preference", ""),
+                    "action_advice": (market_state.get("action_advice") or {}).get("advice_text", "") if isinstance(market_state.get("action_advice"), dict) else str(market_state.get("action_advice", "")),
                 },
                 "recommendations": rec_serialized,
                 "next_day_strategy": {
@@ -608,10 +602,6 @@ def _run_recommend_task(task_id, params):
                     "risk_control": next_day.get("risk_control", ""),
                     "overall_strategy": next_day.get("overall_strategy", ""),
                 },
-                # ★ 新增报告字段
-                "capital_flow_report": cf_report,
-                "dragon_report": dragon_report,
-                "plan_report": plan_report,
             }
     except Exception as e:
         logger.error(f"推荐任务异常: {e}", exc_info=True)
@@ -1117,6 +1107,317 @@ def handle_model_health():
         return {"success": False, "error": str(e)}
 
 
+# ============ 最新分析结果 API（从数据库读取，无需重跑） ============
+
+def _latest_date_from_table(table, date_col='date'):
+    """安全获取某张表的最新日期"""
+    try:
+        import sqlite3
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(f"SELECT MAX({date_col}) as d FROM {table}").fetchone()
+        conn.close()
+        return row['d'] if row and row['d'] else None
+    except Exception:
+        return None
+
+
+def handle_daily_latest(params):
+    """每日分析页：从数据库读取最新结构化分析结果（资金流/龙头/操作计划/进场确定性）"""
+    try:
+        import sqlite3
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+
+        date_str = params.get("date", [None])[0]
+
+        # 确定最新日期（以涨停明细表为准）
+        if not date_str:
+            row = conn.execute("SELECT MAX(date) as d FROM xgt_limit_up_detail").fetchone()
+            date_str = row['d'] if row and row['d'] else None
+        if not date_str:
+            conn.close()
+            return {"success": True, "data": {"date": None, "has_data": False, "message": "暂无涨停数据，请先获取数据"}}
+
+        result = {"date": date_str, "has_data": True}
+
+        # ── 1. 基础统计 ──
+        summary = conn.execute(
+            "SELECT * FROM xgt_daily_summary WHERE date = ?", (date_str,)
+        ).fetchone()
+        result["summary"] = dict(summary) if summary else {}
+
+        # ── 2. 砸盘系数 ──
+        smash = conn.execute(
+            "SELECT * FROM smash_coefficients WHERE trade_date = ?", (date_str,)
+        ).fetchone()
+        result["smash"] = dict(smash) if smash else {}
+
+        # ── 3. 资金流分析（结构化） ──
+        try:
+            cf = conn.execute(
+                "SELECT * FROM capital_flow_analysis WHERE date = ?", (date_str,)
+            ).fetchone()
+            if cf:
+                cf = dict(cf)
+                for k in ('attack_metrics', 'persistence_metrics', 'rotation_metrics',
+                          'combo_signals', 'full_result'):
+                    if cf.get(k):
+                        try:
+                            cf[k] = json.loads(cf[k])
+                        except Exception:
+                            cf[k] = None
+                result["capital_flow"] = cf
+            else:
+                result["capital_flow"] = None
+        except Exception as e:
+            logger.warning(f"capital_flow read skipped: {e}")
+            result["capital_flow"] = None
+
+        # ── 4. 龙头识别（结构化列表） ──
+        dragon_list = []
+        try:
+            dragons = conn.execute(
+                "SELECT * FROM dragon_detections WHERE detect_date = ? "
+                "ORDER BY total_score DESC LIMIT 15", (date_str,)
+            ).fetchall()
+            for d in dragons:
+                d = dict(d)
+                for k in ('reasons', 'risks'):
+                    if d.get(k):
+                        try:
+                            d[k] = json.loads(d[k])
+                        except Exception:
+                            d[k] = []
+                    else:
+                        d[k] = []
+                dragon_list.append(d)
+        except Exception as e:
+            logger.warning(f"dragon read skipped: {e}")
+        result["dragons"] = dragon_list
+
+        # ── 5. 操作计划（结构化列表） ──
+        plan_list = []
+        try:
+            plans = conn.execute(
+                "SELECT * FROM operation_plans WHERE plan_date = ? "
+                "ORDER BY expected_return DESC", (date_str,)
+            ).fetchall()
+            for p in plans:
+                p = dict(p)
+                if p.get('plan_details'):
+                    try:
+                        p['plan_details'] = json.loads(p['plan_details'])
+                    except Exception:
+                        p['plan_details'] = {}
+                else:
+                    p['plan_details'] = {}
+                plan_list.append(p)
+        except Exception as e:
+            logger.warning(f"operation_plans read skipped: {e}")
+        result["operation_plans"] = plan_list
+
+        # ── 6. 进场确定性（结构化列表） ──
+        eca_list = []
+        try:
+            eca = conn.execute(
+                "SELECT * FROM entry_certainty_analysis WHERE date = ? "
+                "ORDER BY composite_score DESC LIMIT 15", (date_str,)
+            ).fetchall()
+            for r in eca:
+                r = dict(r)
+                for k in ('conditions', 'signals', 'risks', 'dimensions'):
+                    if r.get(k):
+                        try:
+                            r[k] = json.loads(r[k])
+                        except Exception:
+                            r[k] = [] if k != 'dimensions' else {}
+                    else:
+                        r[k] = [] if k != 'dimensions' else {}
+                eca_list.append(r)
+        except Exception as e:
+            logger.warning(f"entry_certainty read skipped: {e}")
+        result["entry_certainty"] = eca_list
+
+        # ── 7. 周期上下文 ──
+        cycle = conn.execute(
+            "SELECT * FROM dragon_cycle_context WHERE date = ?", (date_str,)
+        ).fetchone()
+        if cycle:
+            c = dict(cycle)
+            if c.get('details'):
+                try:
+                    c['details'] = json.loads(c['details'])
+                except Exception:
+                    c['details'] = {}
+            result["cycle_context"] = c
+        else:
+            result["cycle_context"] = None
+
+        # ── 8. 概念热度 TOP10 ──
+        concepts = conn.execute(
+            "SELECT concept, count FROM concept_statistics "
+            "WHERE date = ? AND concept NOT LIKE '%炸板%' "
+            "ORDER BY count DESC LIMIT 10", (date_str,)
+        ).fetchall()
+        result["concept_heat"] = [dict(r) for r in concepts]
+
+        # ── 9. 连板梯队 ──
+        tiers = conn.execute(
+            "SELECT limit_up_days, COUNT(*) as cnt, "
+            "GROUP_CONCAT(name) as stocks "
+            "FROM xgt_limit_up_detail WHERE date = ? "
+            "GROUP BY limit_up_days ORDER BY limit_up_days DESC",
+            (date_str,)
+        ).fetchall()
+        result["board_tiers"] = [dict(r) for r in tiers]
+
+        conn.close()
+        return {"success": True, "data": result}
+    except Exception as e:
+        logger.error(f"daily latest error: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+def handle_recommend_latest(params):
+    """智能推荐页：从数据库读取/快速计算最新推荐结果，不触发完整run_daily"""
+    try:
+        date_str = params.get("date", [None])[0]
+        if not date_str:
+            date_str = _latest_date_from_table('xgt_limit_up_detail', 'date')
+        if not date_str:
+            return {"success": True, "data": {"date": None, "has_data": False,
+                    "message": "暂无涨停数据，请先获取数据后点击\"生成智能推荐\""}}
+
+        if not _smart_recommender:
+            return {"success": False, "error": "智能推荐模块未加载"}
+
+        # 快速计算推荐（不跑完整run_daily）
+        market_state = _smart_recommender.analyze_current_market(date_str, DB_PATH)
+        recs = _smart_recommender.generate_recommendations(date_str, top_n=10, db_path=DB_PATH)
+        next_day = _smart_recommender.recommend_for_next_day(date_str, DB_PATH)
+
+        target_date = next_day.get("target_date", "") or next_day.get("date", "") or date_str
+        rec_serialized = []
+        for r in recs:
+            rec_serialized.append({
+                "code": r.get("code", ""),
+                "name": r.get("name", ""),
+                "total_score": r.get("total_score", 0),
+                "win_rate": r.get("win_rate", 0),
+                "grade": r.get("grade", ""),
+                "reason": r.get("reason", ""),
+                "risk_notes": r.get("risk_notes", []) if isinstance(r.get("risk_notes"), list) else [],
+                "suggested_action": r.get("suggested_action", ""),
+                "concept": r.get("concept", ""),
+                "limit_up_days": r.get("limit_up_days", 1),
+                "dimension_scores": r.get("dimension_scores", {}),
+                "dimension_reasons": r.get("dimension_reasons", {}),
+                "confidence_level": r.get("confidence_level", "C"),
+                "confidence_name": r.get("confidence_name", "C级·中等"),
+                "historical_win_rate": r.get("historical_win_rate", 0.50),
+                "condition_match": r.get("condition_match", ""),
+                "dragon_info": r.get("dragon_info"),
+            })
+
+        # 从数据库读取进场确定性 + 操作计划（如果已有分析结果）
+        import sqlite3
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+
+        entry_certainty = []
+        try:
+            eca_rows = conn.execute(
+                "SELECT * FROM entry_certainty_analysis WHERE date = ? "
+                "ORDER BY composite_score DESC LIMIT 10", (date_str,)
+            ).fetchall()
+            for r in eca_rows:
+                r = dict(r)
+                for k in ('conditions', 'signals', 'risks'):
+                    if r.get(k):
+                        try:
+                            r[k] = json.loads(r[k])
+                        except Exception:
+                            r[k] = []
+                    else:
+                        r[k] = []
+                entry_certainty.append(r)
+        except Exception:
+            pass
+
+        plans_map = {}
+        try:
+            plan_rows = conn.execute(
+                "SELECT * FROM operation_plans WHERE plan_date = ?", (date_str,)
+            ).fetchall()
+            for p in plan_rows:
+                p = dict(p)
+                if p.get('plan_details'):
+                    try:
+                        p['plan_details'] = json.loads(p['plan_details'])
+                    except Exception:
+                        p['plan_details'] = {}
+                plans_map[p['code']] = p
+        except Exception:
+            pass
+
+        # 资金流
+        cf_data = None
+        try:
+            cf_row = conn.execute(
+                "SELECT * FROM capital_flow_analysis WHERE date = ?", (date_str,)
+            ).fetchone()
+            if cf_row:
+                cf_data = dict(cf_row)
+                for k in ('combo_signals', 'full_result'):
+                    if cf_data.get(k):
+                        try:
+                            cf_data[k] = json.loads(cf_data[k])
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        conn.close()
+
+        return {"success": True, "data": {
+            "date": date_str,
+            "target_date": target_date,
+            "has_data": True,
+            "market_state": {
+                "cycle_phase": market_state.get("cycle_phase", ""),
+                "smash_coefficient": market_state.get("smash_coefficient"),
+                "smash_trend": market_state.get("smash_trend", ""),
+                "explosion_rate": market_state.get("explosion_rate", 0),
+                "hot_concepts_top5": market_state.get("hot_concepts_top5", []),
+                "max_boards": market_state.get("max_boards", 0),
+                "limit_up_count": market_state.get("limit_up_count", 0),
+                "limit_down_count": market_state.get("limit_down_count", 0),
+                "sentiment": market_state.get("sentiment", ""),
+                "cap_preference": market_state.get("cap_preference", ""),
+                "action_advice": (
+                    market_state.get("action_advice", {}).get("advice_text", "")
+                    if isinstance(market_state.get("action_advice"), dict)
+                    else str(market_state.get("action_advice", ""))
+                ),
+            },
+            "recommendations": rec_serialized,
+            "next_day_strategy": {
+                "target_date": target_date,
+                "target_board_height": next_day.get("target_board_height", ""),
+                "focus_concepts": next_day.get("focus_concepts", []),
+                "risk_control": next_day.get("risk_control", ""),
+                "overall_strategy": next_day.get("overall_strategy", ""),
+            },
+            "entry_certainty": entry_certainty,
+            "operation_plans": plans_map,
+            "capital_flow": cf_data,
+        }}
+    except Exception as e:
+        logger.error(f"recommend latest error: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 # V4 API
 def handle_start_recommend(body):
     data = json.loads(body) if body else {}
@@ -1422,6 +1723,10 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self._json_response(handle_dragon_imminent(params))
             elif path == "/api/entry_certainty":
                 self._json_response(handle_entry_certainty(params))
+            elif path == "/api/daily/latest":
+                self._json_response(handle_daily_latest(params))
+            elif path == "/api/recommend/latest":
+                self._json_response(handle_recommend_latest(params))
             elif path == "/api/model/health":
                 self._json_response(handle_model_health())
             elif path == "/api/signals":
@@ -1672,6 +1977,34 @@ def main():
         print("[DB] 数据库表初始化完成")
     except Exception as e:
         print(f"[WARN] 数据库初始化失败: {e}")
+
+    # 初始化扩展模块表（资金流/龙头/操作计划/进场确定性）
+    try:
+        from capital_flow_analyzer import CapitalFlowAnalyzer
+        _cf = CapitalFlowAnalyzer(DB_PATH)
+        _cf.init_tables()
+        _cf.close()
+        print("[DB] capital_flow_analysis 表已就绪")
+    except Exception as e:
+        print(f"[WARN] 资金流分析表初始化失败: {e}")
+    try:
+        from dragon_detector import DragonDetector
+        DragonDetector.init_tables(DB_PATH)
+        print("[DB] dragon_detections 表已就绪")
+    except Exception as e:
+        print(f"[WARN] 龙头识别表初始化失败: {e}")
+    try:
+        from operation_planner import OperationPlanner
+        OperationPlanner.init_tables(DB_PATH)
+        print("[DB] operation_plans 表已就绪")
+    except Exception as e:
+        print(f"[WARN] 操作计划表初始化失败: {e}")
+    try:
+        from entry_certainty_analyzer import init_tables as eca_init
+        eca_init(DB_PATH)
+        print("[DB] entry_certainty_analysis 表已就绪")
+    except Exception as e:
+        print(f"[WARN] 进场确定性表初始化失败: {e}")
 
     try:
         schedule.every().day.at("09:25").do(scheduled_fetch_and_recommend)

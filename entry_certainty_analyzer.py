@@ -25,10 +25,20 @@ from typing import Dict, List, Optional, Tuple, Any
 from collections import defaultdict
 from config import DB_PATH
 
-# 导入真实连板计算器
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from core.board_calculator import BoardCalculator, VALID_DATA_START
+# 导入真实连板计算器（兼容项目根目录直接运行与打包路径）
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+try:
+    from board_calculator import BoardCalculator, VALID_DATA_START
+    _HAS_BOARD_CALC = True
+except ImportError:
+    try:
+        from core.board_calculator import BoardCalculator, VALID_DATA_START
+        _HAS_BOARD_CALC = True
+    except ImportError:
+        _HAS_BOARD_CALC = False
+        BoardCalculator = None
+        VALID_DATA_START = None
 
 logger = logging.getLogger(__name__)
 
@@ -215,10 +225,16 @@ class EntryCertaintyAnalyzer:
         self.db_path = db_path
         self._board_calc = None
 
-    def _get_board_calc(self, conn=None) -> BoardCalculator:
-        """获取（或创建）连板计算器"""
+    def _get_board_calc(self, conn=None):
+        """获取（或创建）连板计算器；导入失败时返回 None，由调用方走 fallback"""
+        if not _HAS_BOARD_CALC or BoardCalculator is None:
+            return None
         if self._board_calc is None:
-            self._board_calc = BoardCalculator()
+            try:
+                self._board_calc = BoardCalculator()
+            except Exception as e:
+                logger.warning(f"BoardCalculator 初始化失败，使用降级模式: {e}")
+                return None
         return self._board_calc
 
     def _get_conn(self) -> sqlite3.Connection:
