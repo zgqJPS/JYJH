@@ -113,119 +113,151 @@
 
         <!-- ========== 每日分析 ========== -->
         <div id="tab-daily" class="tab-content">
-            <div class="row mb-3"><div class="col-12">
-                <h4 class="text-light mb-3"><i class="bi bi-calendar-check text-gold"></i> 每日分析</h4>
-                <button class="btn btn-outline-light me-2" id="btn-fetch-data" onclick="runFetchData()"><i class="bi bi-cloud-download"></i> 获取今日数据</button>
-                <button class="btn btn-gold" id="btn-run-daily" onclick="runDailyAnalysis()"><i class="bi bi-play-fill"></i> 执行每日分析</button>
+            <div class="row mb-3"><div class="col-12 d-flex align-items-center flex-wrap gap-2">
+                <h4 class="text-light mb-0 me-3"><i class="bi bi-calendar-check text-gold"></i> 每日分析</h4>
+                <small class="text-muted me-auto" id="daily-data-date"></small>
+                <button class="btn btn-outline-light btn-sm" id="btn-fetch-data" onclick="runFetchData()"><i class="bi bi-cloud-download"></i> 获取数据</button>
+                <button class="btn btn-gold btn-sm" id="btn-run-daily" onclick="runDailyAnalysis()"><i class="bi bi-play-fill"></i> 重新执行全量分析</button>
             </div></div>
+
+            <!-- 进度条 -->
             <div class="row mb-3" id="daily-progress" style="display:none"><div class="col-12">
-                <div class="card card-dark"><div class="card-body">
-                    <div class="d-flex align-items-center mb-2">
+                <div class="card card-dark"><div class="card-body py-2">
+                    <div class="d-flex align-items-center mb-1">
                         <div class="spinner-border spinner-border-sm text-gold me-2" id="daily-spinner"></div>
-                        <span id="daily-status-text">执行中...</span>
+                        <span id="daily-status-text" class="small">执行中...</span>
                     </div>
-                    <div class="progress"><div class="progress-bar bg-gold" id="daily-progress-bar" style="width:0%"></div></div>
+                    <div class="progress" style="height:6px"><div class="progress-bar bg-gold" id="daily-progress-bar" style="width:0%"></div></div>
                 </div></div>
             </div></div>
+
+            <!-- 空状态 -->
+            <div id="daily-empty" class="text-center text-muted py-5" style="display:none">
+                <i class="bi bi-inbox" style="font-size:3rem;opacity:0.3"></i>
+                <p class="mt-3 mb-1">暂无分析数据</p>
+                <p class="small">请先点击「获取数据」，再点击「重新执行全量分析」</p>
+            </div>
+
+            <!-- 分析结果 -->
             <div id="daily-results" style="display:none">
-                <div class="row g-3 mb-3">
-                    <div class="col-md-6"><div class="card card-dark"><div class="card-body">
-                        <h6 class="text-gold"><i class="bi bi-layers"></i> 连板梯队</h6>
-                        <div id="board-tiers"></div>
-                    </div></div></div>
-                    <div class="col-md-6"><div class="card card-dark"><div class="card-body">
-                        <h6 class="text-gold"><i class="bi bi-pie-chart"></i> 封板质量分布</h6>
-                        <div class="chart-container-sm"><canvas id="sealPieChart"></canvas></div>
-                    </div></div></div>
-                </div>
-                <div class="row g-3 mb-3">
-                    <div class="col-12"><div class="card card-dark"><div class="card-body">
-                        <h6 class="text-gold"><i class="bi bi-fire"></i> 概念热度 TOP10</h6>
-                        <div class="chart-container"><canvas id="conceptBarChart"></canvas></div>
-                    </div></div></div>
-                </div>
-                <div class="row g-3">
-                    <div class="col-12"><div class="card card-dark"><div class="card-body">
-                        <h6 class="text-gold"><i class="bi bi-magic"></i> 预测结果</h6>
-                        <div class="row g-2" id="daily-prediction-cards"></div>
-                    </div></div></div>
+                <!-- 顶部核心指标卡 -->
+                <div class="row g-2 mb-3" id="daily-metric-cards"></div>
+
+                <!-- 资金流三维度 -->
+                <div class="row g-3 mb-3" id="daily-capital-flow-section" style="display:none">
+                    <div class="col-12">
+                        <div class="card card-dark"><div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="text-gold mb-0"><i class="bi bi-cash-stack"></i> 资金流分析</h6>
+                                <div id="daily-cf-summary"></div>
+                            </div>
+                            <div class="row g-3" id="daily-cf-dimensions"></div>
+                            <div id="daily-cf-signals" class="mt-2"></div>
+                        </div></div>
+                    </div>
                 </div>
 
-                <!-- ★ 新增：报告显示区域 -->
-                <div id="daily-reports" style="margin-top:20px; display:none;">
-                    <div class="card card-dark mb-3"><div class="card-body">
-                        <h6 class="text-gold"><i class="bi bi-currency-dollar"></i> 资金流分析报告</h6>
-                        <div id="daily-capital-flow-report" class="report-text" style="white-space:pre-wrap;font-family:monospace;font-size:0.85rem;color:#d1d5db;max-height:400px;overflow:auto;"></div>
-                    </div></div>
-                    <div class="card card-dark mb-3"><div class="card-body">
-                        <h6 class="text-gold"><i class="bi bi-dragon"></i> 龙头识别报告</h6>
-                        <div id="daily-dragon-report" class="report-text" style="white-space:pre-wrap;font-family:monospace;font-size:0.85rem;color:#d1d5db;max-height:400px;overflow:auto;"></div>
-                    </div></div>
-                    <div class="card card-dark"><div class="card-body">
-                        <h6 class="text-gold"><i class="bi bi-clipboard-check"></i> 操作计划报告</h6>
-                        <div id="daily-plan-report" class="report-text" style="white-space:pre-wrap;font-family:monospace;font-size:0.85rem;color:#d1d5db;max-height:400px;overflow:auto;"></div>
-                    </div></div>
+                <!-- 龙头识别 + 进场确定性 -->
+                <div class="row g-3 mb-3">
+                    <div class="col-lg-6" id="daily-dragons-section" style="display:none">
+                        <div class="card card-dark h-100"><div class="card-body">
+                            <h6 class="text-gold mb-3"><i class="bi bi-trophy"></i> 确定性龙头</h6>
+                            <div id="daily-dragons-list"></div>
+                        </div></div>
+                    </div>
+                    <div class="col-lg-6" id="daily-entry-section" style="display:none">
+                        <div class="card card-dark h-100"><div class="card-body">
+                            <h6 class="text-gold mb-3"><i class="bi bi-bullseye"></i> 进场确定性 TOP</h6>
+                            <div id="daily-entry-list"></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- 操作计划 -->
+                <div class="row g-3 mb-3" id="daily-plans-section" style="display:none">
+                    <div class="col-12">
+                        <div class="card card-dark"><div class="card-body">
+                            <h6 class="text-gold mb-3"><i class="bi bi-clipboard-check"></i> 操作计划</h6>
+                            <div class="row g-3" id="daily-plans-list"></div>
+                        </div></div>
+                    </div>
+                </div>
+
+                <!-- 连板梯队 + 概念热度 -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-5"><div class="card card-dark h-100"><div class="card-body">
+                        <h6 class="text-gold mb-3"><i class="bi bi-layers"></i> 连板梯队</h6>
+                        <div id="board-tiers"></div>
+                    </div></div></div>
+                    <div class="col-md-7"><div class="card card-dark h-100"><div class="card-body">
+                        <h6 class="text-gold mb-3"><i class="bi bi-fire"></i> 概念热度 TOP10</h6>
+                        <div class="chart-container-sm" style="height:280px"><canvas id="conceptBarChart"></canvas></div>
+                    </div></div></div>
                 </div>
             </div>
         </div>
 
         <!-- ========== 智能推荐 ========== -->
         <div id="tab-recommend" class="tab-content">
-            <div class="row mb-3"><div class="col-12">
-                <h4 class="text-light mb-3"><i class="bi bi-stars text-gold"></i> 智能推荐（确定性优先）</h4>
-                <button class="btn btn-gold" id="btn-run-recommend" onclick="runRecommend()"><i class="bi bi-play-fill"></i> 生成智能推荐</button>
+            <div class="row mb-3"><div class="col-12 d-flex align-items-center flex-wrap gap-2">
+                <h4 class="text-light mb-0 me-3"><i class="bi bi-stars text-gold"></i> 智能推荐</h4>
+                <small class="text-muted me-auto" id="rec-data-date"></small>
+                <button class="btn btn-gold btn-sm" id="btn-run-recommend" onclick="runRecommend()"><i class="bi bi-arrow-repeat"></i> 刷新推荐</button>
             </div></div>
+
             <div class="row mb-3" id="recommend-progress" style="display:none"><div class="col-12">
-                <div class="card card-dark"><div class="card-body">
-                    <div class="d-flex align-items-center mb-2">
+                <div class="card card-dark"><div class="card-body py-2">
+                    <div class="d-flex align-items-center mb-1">
                         <div class="spinner-border spinner-border-sm text-gold me-2" id="rec-spinner"></div>
-                        <span id="rec-status-text">分析中...</span>
+                        <span id="rec-status-text" class="small">分析中...</span>
                     </div>
-                    <div class="progress"><div class="progress-bar bg-gold" id="rec-progress-bar" style="width:0%"></div></div>
+                    <div class="progress" style="height:6px"><div class="progress-bar bg-gold" id="rec-progress-bar" style="width:0%"></div></div>
                 </div></div>
             </div></div>
+
+            <!-- 空状态 -->
+            <div id="recommend-empty" class="text-center text-muted py-5" style="display:none">
+                <i class="bi bi-stars" style="font-size:3rem;opacity:0.3"></i>
+                <p class="mt-3 mb-1">暂无推荐数据</p>
+                <p class="small">点击「刷新推荐」生成最新分析</p>
+            </div>
+
             <div id="recommend-results" style="display:none">
+                <!-- 市场状态 + 次日策略 -->
                 <div class="row g-3 mb-3">
-                    <div class="col-md-6">
+                    <div class="col-md-7">
                         <div class="card card-dark h-100"><div class="card-body">
-                            <h6 class="text-gold"><i class="bi bi-speedometer2"></i> 当前市场状态</h6>
+                            <h6 class="text-gold mb-3"><i class="bi bi-speedometer2"></i> 市场状态</h6>
                             <div id="rec-market-state" class="market-state-grid"></div>
                         </div></div>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-5">
                         <div class="card card-dark h-100"><div class="card-body">
-                            <h6 class="text-gold"><i class="bi bi-compass"></i> 次日操作策略</h6>
+                            <h6 class="text-gold mb-3"><i class="bi bi-compass"></i> 次日策略</h6>
                             <div id="rec-next-strategy"></div>
                         </div></div>
                     </div>
                 </div>
+
+                <!-- 资金流状态条 -->
+                <div class="row g-3 mb-3" id="rec-cf-bar" style="display:none">
+                    <div class="col-12"><div class="card card-dark"><div class="card-body py-2" id="rec-cf-content"></div></div></div>
+                </div>
+
+                <!-- 推荐个股 + 侧边栏 -->
                 <div class="row g-3 mb-3">
                     <div class="col-lg-8">
-                        <h6 class="text-light mb-2"><i class="bi bi-trophy text-gold"></i> 推荐个股</h6>
+                        <h6 class="text-light mb-2"><i class="bi bi-trophy text-gold"></i> 推荐标的</h6>
                         <div id="rec-stock-list"></div>
                     </div>
                     <div class="col-lg-4">
                         <h6 class="text-light mb-2"><i class="bi bi-pie-chart text-gold"></i> 维度雷达</h6>
-                        <div class="card card-dark"><div class="card-body"><div class="chart-container-sm"><canvas id="radarChart"></canvas></div></div></div>
+                        <div class="card card-dark"><div class="card-body"><div class="chart-container-sm" style="height:260px"><canvas id="radarChart"></canvas></div></div></div>
+                        <h6 class="text-light mt-3 mb-2"><i class="bi bi-bullseye text-gold"></i> 进场确定性</h6>
+                        <div id="rec-entry-mini" class="card card-dark"><div class="card-body p-2" style="max-height:320px;overflow-y:auto"></div></div>
                         <h6 class="text-light mt-3 mb-2"><i class="bi bi-shield-exclamation text-gold"></i> 出场信号</h6>
-                        <div id="exit-signals-panel"><div id="exit-signals-loading" class="text-muted">加载中...</div></div>
+                        <div id="exit-signals-panel"><div id="exit-signals-loading" class="text-muted small">加载中...</div></div>
                     </div>
-                </div>
-
-                <!-- ★ 新增：报告显示区域（智能推荐页面） -->
-                <div id="rec-reports" style="margin-top:20px; display:none;">
-                    <div class="card card-dark mb-3"><div class="card-body">
-                        <h6 class="text-gold"><i class="bi bi-currency-dollar"></i> 资金流分析报告</h6>
-                        <div id="rec-capital-flow-report" class="report-text" style="white-space:pre-wrap;font-family:monospace;font-size:0.85rem;color:#d1d5db;max-height:400px;overflow:auto;"></div>
-                    </div></div>
-                    <div class="card card-dark mb-3"><div class="card-body">
-                        <h6 class="text-gold"><i class="bi bi-dragon"></i> 龙头识别报告</h6>
-                        <div id="rec-dragon-report" class="report-text" style="white-space:pre-wrap;font-family:monospace;font-size:0.85rem;color:#d1d5db;max-height:400px;overflow:auto;"></div>
-                    </div></div>
-                    <div class="card card-dark"><div class="card-body">
-                        <h6 class="text-gold"><i class="bi bi-clipboard-check"></i> 操作计划报告</h6>
-                        <div id="rec-plan-report" class="report-text" style="white-space:pre-wrap;font-family:monospace;font-size:0.85rem;color:#d1d5db;max-height:400px;overflow:auto;"></div>
-                    </div></div>
                 </div>
             </div>
         </div>
