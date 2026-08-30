@@ -89,9 +89,101 @@ async function loadDashboard() {
         turningPointsData = data.turning_points || null;
         renderSmashChart(data.smash_chart || [], turningPointsData);
         renderTurningPointPanel(turningPointsData);
+        renderVpGate(data.volume_price_market);
         renderPredictions(data.predictions || [], 'prediction-cards');
         loadEntryCertainty();
     } catch (e) { console.error('Dashboard load error:', e); }
+}
+
+// ─────────── 量价闸门：整体量价走势（筛选与进场首要依据） ───────────
+function renderVpGate(vp) {
+    const card = document.getElementById('vp-gate-card');
+    if (!card) return;
+    if (!vp) {
+        card.innerHTML = '<h6 class="text-gold"><i class="bi bi-shield-check"></i> 量价闸门 · 整体量价走势（筛选与进场首要依据）</h6><div class="text-muted small">暂无量价数据</div>';
+        return;
+    }
+    const gateMap = {
+        '正常参与': { icon: '🟢', bg: 'rgba(14,203,129,0.10)', border: 'rgba(14,203,129,0.45)', color: '#0ecb81' },
+        '收缩仓位': { icon: '🟡', bg: 'rgba(250,173,20,0.10)', border: 'rgba(250,173,20,0.45)', color: '#faad14' },
+        '全场无买点': { icon: '🔴', bg: 'rgba(246,70,93,0.10)', border: 'rgba(246,70,93,0.50)', color: '#f6465d' },
+    };
+    const gc = gateMap[vp.gate] || gateMap['收缩仓位'];
+    const m = vp.metrics || {};
+    const metricItems = [
+        ['涨停', m.limit_up_count != null ? m.limit_up_count + '家' : '--'],
+        ['跌停', m.limit_down_count != null ? m.limit_down_count + '家' : '--'],
+        ['炸板率', m.explosion_rate != null ? (m.explosion_rate * 100).toFixed(0) + '%' : '--'],
+        ['平均量比', m.avg_volume_bias != null ? Number(m.avg_volume_bias).toFixed(2) : '--'],
+        ['最高板', m.max_boards != null ? m.max_boards + '板' : '--'],
+    ];
+    const metricHtml = metricItems.map(([k, v]) =>
+        `<span style="display:inline-block;margin:2px 10px 2px 0;font-size:0.78rem"><span class="text-muted">${k} </span><b style="color:#e5e7eb">${v}</b></span>`
+    ).join('');
+    const signals = (vp.signals || []).slice(0, 3).map(s => `<div style="font-size:0.75rem;color:${gc.color};margin-top:2px">✅ ${s}</div>`).join('');
+    const risks = (vp.risks || []).slice(0, 3).map(r => `<div style="font-size:0.75rem;color:#f6465d;margin-top:2px">⚠️ ${r}</div>`).join('');
+    const note = vp.gate === '全场无买点'
+        ? '⛔ 量价闸门关闭：除分歧转一致回封标的外，全场不给买点、不出新仓'
+        : vp.gate === '收缩仓位'
+            ? '⚠️ 量价环境偏弱：个股量价不合格（fail）一票否决，谨慎仓位减半'
+            : '✅ 量价环境支持参与：个股仍需通过量价形态闸门（fail一票否决）';
+    card.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+            <h6 class="text-gold mb-0"><i class="bi bi-shield-check"></i> 量价闸门 · 整体量价走势（筛选与进场首要依据）</h6>
+            <span style="padding:4px 16px;border-radius:20px;background:${gc.bg};border:1px solid ${gc.border};color:${gc.color};font-weight:700;font-size:0.9rem">${gc.icon} ${vp.gate || '--'}</span>
+        </div>
+        <div style="margin-top:8px;font-size:0.82rem;color:#e5e7eb">
+            <b style="color:${gc.color}">${vp.state_label || ''}</b>
+            <span class="text-muted ms-2">量价评分 ${vp.score != null ? Math.round(vp.score) : '--'}</span>
+        </div>
+        <div style="margin-top:6px">${metricHtml}</div>
+        ${signals || risks ? `<div style="margin-top:6px">${signals}${risks}</div>` : ''}
+        <div style="margin-top:8px;padding:6px 10px;background:${gc.bg};border-radius:6px;font-size:0.75rem;color:${gc.color}">${note}</div>
+    `;
+}
+
+// ─────────── 一键更新：触发后端全量分析（获取数据+全模块重算），完成后刷新所有页面 ───────────
+async function runRefreshAll() {
+    const btn = document.getElementById('btn-refresh-all');
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    const oldHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 更新中...';
+    try {
+        const resp = await postJSON('/api/daily', {});
+        if (!resp.success) { alert('一键更新启动失败：' + (resp.error || '')); btn.disabled = false; btn.innerHTML = oldHtml; return; }
+        const taskId = resp.task_id;
+        const timer = setInterval(async () => {
+            try {
+                const sr = await fetchJSON(`/api/daily/status?task_id=${taskId}`);
+                if (!sr.success) return;
+                const d = sr.data;
+                btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> ${d.progress || 0}% ${d.message ? d.message.substring(0, 12) : ''}`;
+                if (d.status === 'completed') {
+                    clearInterval(timer);
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-check-circle-fill"></i> 更新完成';
+                    // 全量刷新各页面数据（无论当前在哪个Tab，全部重载）
+                    try { await loadDashboard(); } catch (e) {}
+                    try { await loadDailyLatest(); } catch (e) {}
+                    try { await loadRecommendLatest(); } catch (e) {}
+                    try { await loadRecommendationHistory(); } catch (e) {}
+                    try { await loadExitSignals(); } catch (e) {}
+                    try { await loadReports(); } catch (e) {}
+                    try { await loadModelHealth(); } catch (e) {}
+                    try { await loadSignalCards(); await loadSignalStats(); } catch (e) {}
+                    setTimeout(() => { btn.innerHTML = oldHtml; }, 3000);
+                } else if (d.status === 'error') {
+                    clearInterval(timer);
+                    btn.disabled = false; btn.innerHTML = oldHtml;
+                    alert('更新失败：' + (d.message || '请查看日志'));
+                }
+            } catch (e) { console.warn('refresh poll error:', e); }
+        }, 2500);
+    } catch (e) {
+        alert('一键更新请求失败：' + e.message);
+        btn.disabled = false; btn.innerHTML = oldHtml;
+    }
 }
 
 // ─────────── 进场确定性深度分析 ───────────
@@ -109,7 +201,17 @@ function renderEntryCertaintyPanel(data) {
     const dateEl = document.getElementById('entry-certainty-date');
     if (!panel) return;
     if (!data.results || data.results.length === 0) {
-        panel.innerHTML = '<div class="text-muted">暂无进场确定性分析数据（执行每日分析后生成）</div>';
+        // 区分"无分析数据"与"有分析但全部被质量门槛过滤"
+        if (data.total_analyzed && data.total_analyzed > 0) {
+            panel.innerHTML = `<div style="padding:14px;text-align:center;">
+                <div style="font-size:1.6rem">🛡️</div>
+                <b style="color:#faad14;">当日 ${data.total_analyzed} 只候选全部未达进场门槛</b>
+                <div class="text-muted small mt-1">${data.gate_rule || '综合分/题材/量价不达标'}，宁缺毋滥，建议空仓观望</div>
+            </div>`;
+        } else {
+            panel.innerHTML = '<div class="text-muted">暂无进场确定性分析数据（执行每日分析后生成）</div>';
+        }
+        if (dateEl) dateEl.textContent = data.date || '';
         return;
     }
     if (dateEl) dateEl.textContent = data.date || '';
@@ -127,14 +229,72 @@ function renderEntryCertaintyPanel(data) {
         'wait': '🚫', '空仓观望': '🚫', '观望': '👀'
     };
 
-    let html = '<div class="row g-2">';
-    data.results.forEach(r => {
+    const esc = s => String(s == null ? '' : s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+    const scoreColor = v => v >= 80 ? '#52c41a' : v >= 60 ? '#1890ff' : v >= 40 ? '#faad14' : '#f6465d';
+    const gradeIcon = { pass: '🟢', caution: '🟡', fail: '🔴' };
+
+    // ── 单维度深度块（题材/卡位/换手/竞价/次日）──
+    function dimBlock(icon, title, d) {
+        if (!d) return '';
+        const sig = (d.signals || []).slice(0, 3).map(s => `<div style="color:#73d13d;font-size:11px;line-height:1.5">✅ ${esc(s)}</div>`).join('');
+        const rsk = (d.risks || []).slice(0, 3).map(s => `<div style="color:#ff7875;font-size:11px;line-height:1.5">⚠️ ${esc(s)}</div>`).join('');
+        return `<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:6px 8px;margin-top:6px;">
+            <div style="font-size:12px;font-weight:700;color:#e5e7eb;">${icon} ${title}
+                <span style="float:right;color:${scoreColor(d.score)};font-weight:700;">${d.score != null ? d.score + '分' : ''}</span></div>
+            ${sig}${rsk}
+        </div>`;
+    }
+
+    // ── 次日推演：贝叶斯因子表 + 三情景 ──
+    function nextdayBlock(d) {
+        if (!d) return '';
+        const det = d.details || {};
+        let factorHtml = '';
+        const ft = det.factor_table || [];
+        if (ft.length) {
+            factorHtml = '<div style="margin-top:5px;font-size:10.5px;"><span class="text-muted">概率因子：</span>' +
+                ft.map(f => {
+                    const pct = Math.round((f.prob || 0) * 100);
+                    const c = pct >= 45 ? '#73d13d' : pct >= 25 ? '#faad14' : '#ff7875';
+                    return `<span style="display:inline-block;margin:1px 4px 1px 0;padding:1px 6px;border-radius:3px;background:rgba(255,255,255,0.06);">${esc(f.factor)} ${esc(f.value)} <b style="color:${c}">${pct}%</b></span>`;
+                }).join('') + '</div>';
+        }
+        let scenHtml = '';
+        const sc = det.scenarios || [];
+        if (sc.length) {
+            const scenColor = { '最强': '#73d13d', '中性': '#69c0ff', '最弱': '#ff7875' };
+            scenHtml = '<div style="margin-top:6px;">' + sc.map(s => `
+                <div style="font-size:10.5px;border-left:2px solid ${scenColor[s.scenario] || '#888'};padding-left:6px;margin-top:4px;">
+                    <b style="color:${scenColor[s.scenario] || '#888'}">${esc(s.scenario)}情景</b>
+                    <span class="text-muted">(${Math.round((s.probability || 0) * 100)}%)</span>：
+                    ${esc(s.condition)}<br>
+                    <span style="color:#ffd666;">→ ${esc(s.action)}</span>
+                </div>`).join('') + '</div>';
+        }
+        const sig = (d.signals || []).slice(0, 2).map(s => `<div style="color:#73d13d;font-size:11px;line-height:1.5">✅ ${esc(s)}</div>`).join('');
+        const rsk = (d.risks || []).slice(0, 3).map(s => `<div style="color:#ff7875;font-size:11px;line-height:1.5">⚠️ ${esc(s)}</div>`).join('');
+        return `<div style="background:rgba(250,173,20,0.06);border:1px solid rgba(250,173,20,0.25);border-radius:6px;padding:6px 8px;margin-top:6px;">
+            <div style="font-size:12px;font-weight:700;color:#ffd666;">🎲 次日确定性推演
+                <span style="float:right;color:${scoreColor(d.score)};font-weight:700;">${d.score != null ? d.score + '分' : ''}</span></div>
+            ${factorHtml}${scenHtml}${sig}${rsk}
+        </div>`;
+    }
+
+    // 过滤提示：有标的被质量门槛剔除时显示
+    let gateNotice = '';
+    if (data.filtered_out && data.filtered_out > 0) {
+        gateNotice = `<div style="font-size:11px;color:#faad14;background:rgba(250,173,20,0.08);border-radius:6px;padding:5px 10px;margin-bottom:8px;">
+            🛡️ 已过滤 ${data.filtered_out} 只低确定性标的（${data.gate_rule || '综合分/题材/量价不达标'}），宁缺毋滥，仅展示 ${data.results.length} 只达标票</div>`;
+    }
+
+    let html = gateNotice + '<div class="row g-2">';
+    data.results.forEach((r, idx) => {
         const gc = gradeColor[r.certainty_grade] || gradeColor.C;
         const bp = r.bayes_probability != null ? (r.bayes_probability * 100).toFixed(0) + '%' : '--';
         const pos = r.position_pct > 0 ? (r.position_pct * 100).toFixed(0) + '%' : '0%';
         const aIcon = actionIcon[r.action] || actionIcon[r.action_name] || '📊';
-        const signals = r.signals || [];
-        const risks = r.risks || [];
+        const dd = r.dim_detail || {};
+        const vp = dd.volume_price;
         const dims = [
             { label: '题材', val: r.theme_score },
             { label: '卡位', val: r.positioning_score },
@@ -144,10 +304,26 @@ function renderEntryCertaintyPanel(data) {
             { label: '次日', val: r.next_day_score }
         ];
         const dimBars = dims.map(d => {
-            const c = d.val >= 80 ? '#52c41a' : d.val >= 60 ? '#1890ff' : d.val >= 40 ? '#faad14' : '#f6465d';
+            const c = scoreColor(d.val);
             return `<span style="display:inline-block;min-width:32px;"><small class="text-muted">${d.label}</small> `
                  + `<b style="color:${c}">${d.val || '--'}</b></span>`;
         }).join(' ');
+
+        const vpLine = vp ? `<div style="font-size:10.5px;margin-top:3px;">
+            <span style="color:${vp.grade === 'fail' ? '#ff7875' : vp.grade === 'caution' ? '#faad14' : '#73d13d'};">
+            ${gradeIcon[vp.grade] || ''} 量价闸门 ${vp.grade === 'fail' ? '不通过' : vp.grade === 'caution' ? '谨慎' : '通过'}
+            （${esc(vp.pattern || '')}）</span></div>` : '';
+
+        const detailId = `ec-detail-${idx}`;
+        const detailHtml = dd.theme ? `
+            <div class="mt-2" style="border-top:1px dashed rgba(255,255,255,0.15);padding-top:6px;">
+                ${vpLine}
+                ${dimBlock('📚', '题材强弱', dd.theme)}
+                ${dimBlock('🎯', '卡位分析', dd.position)}
+                ${dimBlock('🔄', '换手结构', dd.turnover)}
+                ${dimBlock('⏰', '竞价/盘口推演', dd.auction)}
+                ${nextdayBlock(dd.nextday)}
+            </div>` : '<div class="text-muted small mt-2">（旧数据无维度详情，执行一次全量分析后生成）</div>';
 
         html += `<div class="col-md-6 col-xl-4">
             <div class="card mb-0" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);">
@@ -171,18 +347,28 @@ function renderEntryCertaintyPanel(data) {
                   <span class="badge" style="background:rgba(24,144,255,0.2);color:#69c0ff;">仓位 ${pos}</span>
                   <small class="text-muted">止损 ${r.stop_loss || '--'}</small>
                 </div>
-                ${signals.length ? `<div class="mt-1" style="font-size:11px;max-height:32px;overflow:hidden;">
-                  ${signals.slice(0,2).map(s => `<span class="text-success">✓ ${s}</span>`).join('<br>')}
-                </div>` : ''}
-                ${risks.length ? `<div class="mt-1" style="font-size:11px;max-height:32px;overflow:hidden;">
-                  ${risks.slice(0,1).map(s => `<span class="text-danger">⚠ ${s}</span>`).join('')}
-                </div>` : ''}
+                <div style="margin-top:5px;">
+                  <a href="javascript:void(0)" onclick="toggleEcDetail('${detailId}', this)"
+                     style="font-size:11px;color:#69c0ff;text-decoration:none;">
+                    ▸ 深度分析（题材·卡位·换手·竞价·次日推演）</a>
+                </div>
+                <div id="${detailId}" style="display:none;">${detailHtml}</div>
               </div>
             </div>
           </div>`;
     });
     html += '</div>';
     panel.innerHTML = html;
+}
+
+// 展开/收起进场确定性深度分析
+function toggleEcDetail(id, el) {
+    const box = document.getElementById(id);
+    if (!box) return;
+    const open = box.style.display !== 'none';
+    box.style.display = open ? 'none' : 'block';
+    el.innerHTML = open ? '▸ 深度分析（题材·卡位·换手·竞价·次日推演）'
+                        : '▾ 收起深度分析';
 }
 
 // 变盘节点类型 → 颜色/图标
@@ -432,28 +618,29 @@ function renderTurningPointPanel(tpData) {
 
     const latestScColor = s.latest_sc < 3 ? '#0ecb81' : s.latest_sc <= 5 ? '#fcd535' : '#f6465d';
 
+    const chipStyle = 'background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;color:#cbd5e1;';
     let html = `
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
-            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;color:#cbd5e1;">
+            <span style="${chipStyle}">
                 分析区间：<b style="color:#f0b90b;">${s.start_date || '--'}</b>
                 <span style="color:#64748b;"> ~ </span><b style="color:#f0b90b;">${s.end_date || '--'}</b>
             </span>
-            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+            <span style="${chipStyle}">
                 交易日：<b style="color:#00b8d9;">${s.days ?? 0}</b>
             </span>
-            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+            <span style="${chipStyle}">
                 最新砸盘：<b style="color:${latestScColor};">${s.latest_sc ?? '--'}</b>
             </span>
-            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+            <span style="${chipStyle}">
                 最新最高板：<b style="color:#00b8d9;">${s.latest_max_boards ?? '--'}板</b>
             </span>
-            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+            <span style="${chipStyle}">
                 变盘节点：<b style="color:#f0b90b;">${s.turning_point_count ?? 0}</b>
             </span>
-            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+            <span style="${chipStyle}">
                 总龙头诞生：<b style="color:#ffd700;">${s.dragon_birth_count ?? 0}</b>
             </span>
-            <span style="background:#1e293b;padding:6px 12px;border-radius:20px;font-size:0.85rem;">
+            <span style="${chipStyle}">
                 当前周期：<b style="color:${phaseColor};">${s.current_phase || '--'}</b>
             </span>
         </div>`;
@@ -1013,7 +1200,7 @@ function renderCorrectionLogs(logs) {
 // ============ V4: 智能推荐（结构化展示） ============
 let radarChartInstance = null;
 let _recommendCache = null;
-const dimLabels = { 'concept_heat': '概念热度', 'board_position': '连板位置', 'seal_quality': '封板质量', 'cap_fit': '市值适配', 'volume_price': '量价配合' };
+const dimLabels = { 'concept_heat': '概念热度', 'board_position': '连板位置', 'seal_quality': '封板质量', 'cap_fit': '市值适配', 'volume_price': '量价走势', 'dragon_bonus': '龙头加成' };
 
 function setRecLoading(loading, text = '加载中...') {
     const progress = document.getElementById('recommend-progress');
@@ -1141,11 +1328,13 @@ function renderRecommendData(data) {
         <div class="strategy-section risk-text"><div class="strategy-label"><i class="bi bi-shield-exclamation"></i> 风控要点</div><div class="strategy-text">${ns.risk_control || '--'}</div></div>
     `;
 
-    renderRecommendCapitalFlow(data.capital_flow);
-    renderRecommendStocks(data.recommendations || [], data.operation_plans || {}, data.entry_certainty || []);
-    renderRadarChart(data.recommendations || []);
-    renderRecEntryMini(data.entry_certainty || []);
-    loadExitSignals();
+    // 各子模块独立容错：单个模块渲染异常不影响其他模块，更不应触发整页"加载失败"
+    const _safe = (fn, name) => { try { fn(); } catch (e) { console.error(`推荐页[${name}]渲染异常:`, e); } };
+    _safe(() => renderRecommendCapitalFlow(data.capital_flow), '资金流');
+    _safe(() => renderRecommendStocks(data.recommendations || [], data.operation_plans || {}, data.entry_certainty || []), '推荐个股');
+    _safe(() => renderRadarChart(data.recommendations || []), '雷达图');
+    _safe(() => renderRecEntryMini(data.entry_certainty || []), '进场迷你卡');
+    _safe(() => loadExitSignals(), '出场信号');
 }
 
 function renderRecommendCapitalFlow(cf) {
@@ -1210,6 +1399,31 @@ function renderRecommendStocks(recs, plansMap, entryList) {
         const plan = plansMap[code] || entryMap[code];
         const planHtml = plan ? renderPlanDetails(plan) : '';
 
+        // 量价走势闸门标签（首要依据，置顶醒目）
+        let vpTag = '';
+        if (r.vp_pattern) {
+            const vpColor = r.vp_grade === 'pass' ? '#0ecb81'
+                : r.vp_grade === 'caution' ? '#faad14' : '#f6465d';
+            const vpIcon = r.vp_grade === 'pass' ? '🟢' : r.vp_grade === 'caution' ? '🟡' : '🔴';
+            const vetoTxt = Array.isArray(r.vp_veto) && r.vp_veto.length ? ` · ${r.vp_veto[0].slice(0, 40)}` : '';
+            vpTag = `<div class="condition-match" style="border-left:3px solid ${vpColor};margin-top:6px;background:rgba(255,255,255,0.02)">
+                <i class="bi bi-graph-up-arrow"></i> <b style="color:${vpColor}">${vpIcon}量价(首要)：${r.vp_pattern}</b>
+                <span style="color:#9ca3af;font-size:0.72rem"> ${r.vp_gate || ''}${vetoTxt}</span></div>`;
+        }
+
+        // 分歧/一致节奏标签
+        let divergenceTag = '';
+        const divLabel = r.divergence_label || '';
+        const divState = r.divergence_state || '';
+        if (divLabel) {
+            const divColor = divState === 'divergence_to_consensus' ? '#0ecb81'
+                : divState === 'consensus' && r.is_yizi && Number(r.limit_up_days || 1) >= 4 ? '#f6465d'
+                : divState === 'consensus' ? '#faad14'
+                : divState === 'high_divergence' ? '#f6465d'
+                : '#ff9800';
+            divergenceTag = `<div class="condition-match" style="border-left:3px solid ${divColor};margin-top:6px"><i class="bi bi-signal"></i> <b style="color:${divColor}">${divLabel}</b></div>`;
+        }
+
         return `
         <div class="rec-stock-card" style="border-left:3px solid ${borderColor}">
             <div class="rec-stock-header">
@@ -1217,10 +1431,13 @@ function renderRecommendStocks(recs, plansMap, entryList) {
                     <span class="rec-stock-name">${idx + 1}. ${r.name || '--'}</span>
                     <span class="rec-stock-code">${code}</span>
                     ${getConfidenceBadge(level)}
+                    ${r.is_yizi ? '<span class="rec-stock-tag" style="background:rgba(246,70,93,0.18);color:#f6465d;border-color:#f6465d55">一字板</span>' : ''}
                 </div>
                 <div class="rec-stock-score">${Number(r.total_score || 0).toFixed(1)}</div>
             </div>
             ${r.condition_match ? `<div class="condition-match"><i class="bi bi-patch-check-fill"></i> ${r.condition_match} · 历史胜率 ${winPct}</div>` : ''}
+            ${vpTag}
+            ${divergenceTag}
             <div class="rec-stock-meta">
                 ${concepts.map(c => `<span class="rec-stock-tag">${c}</span>`).join('')}
                 <span class="rec-stock-tag">${r.limit_up_days || 1}连板</span>
