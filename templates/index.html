@@ -41,9 +41,11 @@
         <!-- ========== 仪表盘 ========== -->
         <div id="tab-dashboard" class="tab-content active">
             <div class="row mb-3">
-                <div class="col-12">
-                    <h4 class="text-light mb-0"><i class="bi bi-speedometer2 text-gold"></i> 市场概览</h4>
-                    <small class="text-muted" id="dashboard-date">加载中...</small>
+                <div class="col-12 d-flex align-items-center flex-wrap gap-2">
+                    <h4 class="text-light mb-0 me-3"><i class="bi bi-speedometer2 text-gold"></i> 市场概览</h4>
+                    <small class="text-muted me-auto" id="dashboard-date">加载中...</small>
+                    <button class="btn btn-outline-light btn-sm" onclick="loadDashboard()"><i class="bi bi-arrow-clockwise"></i> 刷新本页</button>
+                    <button class="btn btn-gold btn-sm" id="btn-refresh-all" onclick="runRefreshAll()"><i class="bi bi-lightning-charge-fill"></i> 一键更新全部数据</button>
                 </div>
             </div>
             <div class="row g-3 mb-3">
@@ -52,6 +54,16 @@
                 <div class="col-6 col-md-4 col-xl"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">砸盘系数</div><div class="card-value smash-value" id="card-smash">--</div></div></div></div>
                 <div class="col-6 col-md-4 col-xl"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">情绪得分</div><div class="card-value" id="card-sentiment">--</div></div></div></div>
                 <div class="col-6 col-md-4 col-xl"><div class="card card-dark"><div class="card-body text-center"><div class="card-label">封单总额(亿)</div><div class="card-value" id="card-seal">--</div></div></div></div>
+            </div>
+
+            <!-- 量价闸门：整体量价走势为筛选与进场首要依据 -->
+            <div class="row g-3 mb-3">
+                <div class="col-12">
+                    <div class="card card-dark"><div class="card-body" id="vp-gate-card">
+                        <h6 class="text-gold"><i class="bi bi-shield-check"></i> 量价闸门 · 整体量价走势（筛选与进场首要依据）</h6>
+                        <div class="text-muted small">加载中...</div>
+                    </div></div>
+                </div>
             </div>
 
             <div class="row g-3 mb-3">
