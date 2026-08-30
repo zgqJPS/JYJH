@@ -641,21 +641,49 @@ def analyze_current_market(date: str, db_path: str = DB_PATH) -> Dict[str, Any]:
         result['volume_price_market'] = None
 
     result['action_advice'] = _get_action_advice(result)
+
+    # ── 市场量价闸门硬收紧（首要依据）：全场无买点时，只留最强龙头等级 ──
+    # 补缺口：市场量价引擎判"全场无买点"（砸盘≥6.5/炸板率≥40%/跌停潮）时，
+    # 不能仅改情绪标签，必须同步收紧推荐允许等级，否则非龙头候选仍会按A级放出。
+    vp_mkt = result.get('volume_price_market')
+    if vp_mkt and vp_mkt.get('gate') == '全场无买点':
+        result['action_advice'] = _tighten_advice(
+            result['action_advice'], 'S',
+            f"市场量价闸门触发（{vp_mkt.get('state_label','量价恶化')}）：全场无买点，仅S级及以上最强龙头")
     return result
+
+_LEVEL_ORDER = {'SS': 0, 'S': 1, 'A': 2, 'B': 3, 'C': 4}
+
+def _tighten_advice(advice: Dict, new_max_level: str, reason: str) -> Dict:
+    """将建议收紧到不高于 new_max_level 的等级（只收紧不放松）"""
+    cur_max = advice.get('max_confidence', 'A')
+    if _LEVEL_ORDER.get(new_max_level, 2) >= _LEVEL_ORDER.get(cur_max, 2):
+        return advice  # 新阈值比当前更宽松，保持不变
+    allowed = []
+    for lv in CONFIDENCE_PRIORITY:
+        allowed.append(lv)
+        if lv == new_max_level:
+            break
+    return {
+        'max_confidence': new_max_level,
+        'advice_text': reason,
+        'allowed_levels': allowed,
+    }
 
 def _get_action_advice(market_state: Dict) -> Dict[str, str]:
     smash = market_state.get('smash_coefficient')
     explosion_rate = market_state.get('explosion_rate', 0) or 0
     smash_val = smash if smash is not None else 3.5
-    # 确定性优先：恶劣市场仅SS级，差市场S级，正常市场A级起
+    # 确定性优先：恶劣市场仅SS/S级，差市场S/A级，温和市场才放到B
     if smash_val > 7.0 or (smash_val > 6.0 and explosion_rate > 0.30):
         max_level = 'S'
         advice_text = (f"当前砸盘系数{smash_val:.1f}（极高）+炸板率{explosion_rate:.0%}，"
                       f"市场风险极大，仅操作S级及以上确定性龙头")
     elif smash_val > 6.0:
-        max_level = 'A'
-        advice_text = (f"当前砸盘系数{smash_val:.1f}（偏高）+炸板率{explosion_rate:.0%}，"
-                      f"仅建议操作A级及以上确定性龙头")
+        # 高位分歧区（6.0~6.5）：见顶风险大，从A级收紧到S级，宁缺毋滥
+        max_level = 'S'
+        advice_text = (f"当前砸盘系数{smash_val:.1f}（高位分歧）+炸板率{explosion_rate:.0%}，"
+                      f"抛压偏大/见顶风险高，仅建议S级及以上最强龙头，不做跟风")
     elif explosion_rate > 0.40:
         max_level = 'A'
         advice_text = (f"当前炸板率{explosion_rate:.0%}（>40%，极高）+砸盘系数{smash_val:.1f}，"
@@ -1676,10 +1704,11 @@ def _filter_by_confidence_levels(
             except TypeError:
                 is_match = False
             if is_match:
-                # 非龙头股胜率门槛：低于40%不推荐
+                # 非龙头股胜率门槛：低于45%不推荐（跟风票确定性弱于龙头，
+                # 需更高bar；量价/砸盘环境恶化时进一步宁缺毋滥）
                 win_rate = item.get('win_rate', 0)
                 is_dragon = item.get('dragon_info') is not None
-                if not is_dragon and win_rate < 0.40:
+                if not is_dragon and win_rate < 0.45:
                     continue
                 matched.append((item, stock))
         matched.sort(key=lambda x: x[0]['total_score'], reverse=True)

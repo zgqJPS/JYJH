@@ -1171,6 +1171,12 @@ class EntryCertaintyAnalyzer:
         if smash is not None and smash >= 6.5:
             bayes_prob = min(bayes_prob, 0.20)
             cross_signals.append(f"⚠️砸盘系数{smash:.1f}过高：市场分歧过大，无买点（卖点纪律）")
+        elif smash is not None and smash >= 6.0:
+            # 高位分歧区（6.0~6.5）：尚未到硬否决线，但抛压已显著、见顶风险大。
+            # raw封顶0.45→经保序校准约0.22（C级观望，不给B以上买点）；
+            # 与6.5硬否决档（raw0.20→校准约0.19=D级不参与）拉开一档梯度。
+            bayes_prob = min(bayes_prob, 0.45)
+            cross_signals.append(f"⚠️砸盘系数{smash:.1f}处高位分歧区：抛压偏大，次日大概率调整，最强票也仅C级观望")
 
         # ── 龙头等级加成（适度，不能覆盖基础概率）──
         dragon_bonus = 0
@@ -1372,30 +1378,35 @@ class EntryCertaintyAnalyzer:
             vp_cap_note = "量价存疑（" + (vp_gate.get('pattern', '') or '') + "），等级封顶B"
 
         # 4) 确定性等级（以校准后贝叶斯概率和综合分双门槛）
-        #    S+  : 校准胜率≥45% 且 综合≥50
-        #    S   : 校准胜率≥30% 且 综合≥35
-        #    A   : 校准胜率≥22% 且 综合≥25
-        #    B   : 校准胜率≥18% 且 综合≥18
-        #    C   : 校准胜率≥15%
-        #    D   : 其他
-        if bayes_p >= 0.45 and final_score >= 50:
+        #    门槛锚定"相对先验(20.4%)的超额胜率"：校准胜率≤先验=无edge，
+        #    只能给C/D观望；B级起要求明显跑赢随机基准，杜绝"平庸票也评B"。
+        #    S+  : 校准胜率≥50% 且 综合≥55（多因子极强共振）
+        #    S   : 校准胜率≥40% 且 综合≥45
+        #    A   : 校准胜率≥32% 且 综合≥35
+        #    B   : 校准胜率≥25% 且 综合≥25（跑赢先验，可轻仓试错）
+        #    C   : 校准胜率≥20%（基准附近，无edge，观望）
+        #    D   : 校准胜率<20%（跑输基准，不参与）
+        if bayes_p >= 0.50 and final_score >= 55:
             certainty = 'S+'
             desc = f'极高确定性（校准胜率{bayes_p:.0%}，多因子极强共振），核心仓位'
-        elif bayes_p >= 0.30 and final_score >= 35:
+        elif bayes_p >= 0.40 and final_score >= 45:
             certainty = 'S'
             desc = f'高确定性（校准胜率{bayes_p:.0%}，封板质量优），标准仓位'
-        elif bayes_p >= 0.22 and final_score >= 25:
+        elif bayes_p >= 0.32 and final_score >= 35:
             certainty = 'A'
-            desc = f'较高确定性（校准胜率{bayes_p:.0%}），轻仓参与'
-        elif bayes_p >= 0.18 and final_score >= 18:
+            desc = f'较高确定性（校准胜率{bayes_p:.0%}，显著跑赢基准），轻仓参与'
+        elif bayes_p >= 0.25 and final_score >= 25:
             certainty = 'B'
-            desc = f'中等确定性（校准胜率{bayes_p:.0%}，接近基准），极小仓位试错'
-        elif bayes_p >= 0.15:
+            desc = f'中等确定性（校准胜率{bayes_p:.0%}，跑赢基准），极小仓位试错'
+        elif bayes_p >= 0.20:
             certainty = 'C'
-            desc = f'低确定性（校准胜率{bayes_p:.0%}），观望为主'
+            desc = f'低确定性（校准胜率{bayes_p:.0%}，仅与随机基准持平无超额优势），观望为主'
         else:
             certainty = 'D'
-            desc = f'极低确定性（校准胜率{bayes_p:.0%}），不参与'
+            desc = f'极低确定性（校准胜率{bayes_p:.0%}，跑输涨停基准），不参与'
+
+        # 注：题材联动不足（theme分<40，无板块合力）的票，由 API/推荐展示层统一
+        # 过滤剔除（宁缺毋滥），此处保留真实等级不做矛盾封顶，避免"评B又展示"。
 
         return {
             'score': round(final_score, 1),

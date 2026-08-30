@@ -1129,12 +1129,13 @@ def handle_entry_certainty(params):
                 r['dim_detail'] = None
             results.append(r)
 
-        # ── 质量门槛（宁缺毋滥）：综合确定性过低 / 无题材归属 / 量价否决的标的
-        # 不进入面板展示。低分无题材票曾导致"12只B级20分票"刷屏，与谨慎信号自相矛盾。
+        # ── 质量门槛（宁缺毋滥）：只展示 B 级及以上（校准胜率跑赢20.4%基准），
+        # C/D 级（无超额胜率）不进面板；量价否决也剔除。低分无题材票曾导致
+        # "12只B级20分票"刷屏——根因是旧B级门槛低于随机基准，已在分析层重定。
+        _KEEP_GRADES = ('S+', 'S', 'A', 'B')
         def _passes_gate(r):
-            score = r.get('composite_score') or 0
-            grade = (r.get('certainty_grade') or '').upper()
-            if score < 50 or grade in ('D',):
+            grade = (r.get('certainty_grade') or 'D').upper()
+            if grade not in _KEEP_GRADES:
                 return False
             # 题材维度过低（无明确概念标签/无板块联动）直接剔除
             if (r.get('theme_score') is not None and r.get('theme_score') < 40):
@@ -1154,7 +1155,7 @@ def handle_entry_certainty(params):
             "results": qualified,
             "total_analyzed": len(results),
             "filtered_out": filtered_out,
-            "gate_rule": "已过滤综合分<50 / D级 / 题材分<40(无板块联动) / 量价否决 的低确定性标的",
+            "gate_rule": "已过滤C/D级(校准胜率未跑赢20.4%涨停基准)/题材<40(无板块联动)/量价否决 的低确定性标的",
         }}
     except Exception as e:
         logger.error(f"entry_certainty error: {e}", exc_info=True)
@@ -1319,11 +1320,11 @@ def handle_daily_latest(params):
                             r[k] = [] if k != 'dimensions' else {}
                     else:
                         r[k] = [] if k != 'dimensions' else {}
-                # 质量门槛：综合分<50 / D级 / 题材分<40（无板块联动）不展示
-                _score = r.get('composite_score') or 0
-                _grade = (r.get('certainty_grade') or '').upper()
+                # 质量门槛：只保留 B 级及以上（校准胜率跑赢20.4%基准），
+                # 题材分<40（无板块联动）不展示
+                _grade = (r.get('certainty_grade') or 'D').upper()
                 _theme = r.get('theme_score')
-                if _score < 50 or _grade == 'D':
+                if _grade not in ('S+', 'S', 'A', 'B'):
                     continue
                 if _theme is not None and _theme < 40:
                     continue
@@ -1443,7 +1444,7 @@ def handle_recommend_latest(params):
         try:
             eca_rows = conn.execute(
                 "SELECT * FROM entry_certainty_analysis WHERE date = ? "
-                "ORDER BY composite_score DESC LIMIT 10", (date_str,)
+                "ORDER BY composite_score DESC LIMIT 15", (date_str,)
             ).fetchall()
             for r in eca_rows:
                 r = dict(r)
@@ -1455,6 +1456,21 @@ def handle_recommend_latest(params):
                             r[k] = []
                     else:
                         r[k] = []
+                if r.get('dim_detail'):
+                    try:
+                        r['dim_detail'] = json.loads(r['dim_detail'])
+                    except Exception:
+                        r['dim_detail'] = None
+                # 质量门槛：仅 B 级及以上（跑赢20.4%基准）+题材联动达标
+                _g = (r.get('certainty_grade') or 'D').upper()
+                if _g not in ('S+', 'S', 'A', 'B'):
+                    continue
+                if r.get('theme_score') is not None and r.get('theme_score') < 40:
+                    continue
+                _dd = r.get('dim_detail')
+                if isinstance(_dd, dict) and isinstance(_dd.get('volume_price'), dict) \
+                        and _dd['volume_price'].get('grade') == 'fail':
+                    continue
                 entry_certainty.append(r)
         except Exception:
             pass
