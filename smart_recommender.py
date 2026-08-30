@@ -38,6 +38,16 @@ except Exception as e:
     _board_calc = None
     logging.getLogger('smart_recommender').warning(f"BoardCalculator加载失败: {e}")
 
+# 整体量价走势分析引擎（筛选/进场首要依据）
+try:
+    from volume_price_analyzer import (
+        analyze_stock_volume_price, analyze_market_volume_price, load_stock_history
+    )
+    _HAS_VP_ANALYZER = True
+except Exception as e:
+    _HAS_VP_ANALYZER = False
+    logging.getLogger('smart_recommender').warning(f"VolumePriceAnalyzer加载失败: {e}")
+
 # ─────────────────────────── 日志配置 ───────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -47,14 +57,16 @@ logging.basicConfig(
 logger = logging.getLogger('smart_recommender')
 
 # 评分维度权重（初始值，可被 self_upgrader 动态调整）
-# 确定性优先：封板质量40% + 板级位置25% 合计65%，是确定性核心
+# 确定性优先（2026-08-30调整）：整体量价走势提升为筛选/进场首要依据——
+# 高位缩量一字、量能骤断、高位巨量、尾盘偷袭、炸板不回封等量价恶化形态，
+# 是打板/接力的核心亏损来源，故量价为第一权重+硬性闸门（fail一票否决）。
 DEFAULT_WEIGHTS = {
-    'concept_heat':   0.10,
-    'board_position': 0.25,
-    'seal_quality':   0.40,
-    'cap_fit':        0.10,
-    'volume_price':   0.10,
-    'dragon_bonus':   0.05,  # 龙头确定性加成（来自dragon_detector）
+    'volume_price':   0.30,  # 量价走势（首要依据：量能阶梯/换手轨迹/封单量能配合/分歧节奏）
+    'seal_quality':   0.24,  # 封板质量
+    'dragon_bonus':   0.14,  # 龙头确定性加成（来自dragon_detector）
+    'board_position': 0.16,  # 板级位置
+    'concept_heat':   0.08,
+    'cap_fit':        0.08,
 }
 
 # 龙头确定性等级 → 推荐胜率基准映射
@@ -612,6 +624,22 @@ def analyze_current_market(date: str, db_path: str = DB_PATH) -> Dict[str, Any]:
         logger.info(f"[资金流] 综合{cf_score:.1f}({cf_level}), "
                     f"仓位系数x{capital_flow.get('position_multiplier', 1.0)}, "
                     f"情绪修正为{result['sentiment']}")
+
+    # ── 整体量价走势环境（首要依据：涨停趋势/炸板率/跌停/砸盘/平均量比）──
+    if _HAS_VP_ANALYZER:
+        try:
+            vp_market = analyze_market_volume_price(date, db_path)
+            result['volume_price_market'] = vp_market
+            # 量价闸门为"全场无买点"时，直接收紧情绪与最高等级
+            if vp_market.get('gate') == '全场无买点':
+                result['sentiment'] = 'bearish'
+                logger.info(f"[量价] 市场量价闸门触发：{vp_market.get('state_label')}，全场无买点")
+        except Exception as e:
+            logger.warning(f"量价市场环境分析失败: {e}")
+            result['volume_price_market'] = None
+    else:
+        result['volume_price_market'] = None
+
     result['action_advice'] = _get_action_advice(result)
     return result
 
@@ -650,6 +678,99 @@ def _get_action_advice(market_state: Dict) -> Dict[str, str]:
         'advice_text': advice_text,
         'allowed_levels': allowed_levels,
     }
+
+# ─────────────────────────── 一字板与分歧/一致节奏识别 ───────────────────────────
+
+def _parse_seal_time_minutes(t_str) -> Optional[int]:
+    """解析首封时间为分钟数，支持 09:25:00 / 092500 等格式"""
+    if not t_str or str(t_str).strip() in ('', 'None'):
+        return None
+    s = str(t_str).strip()
+    try:
+        if ':' in s:
+            parts = s.split(':')
+            return int(parts[0]) * 60 + int(parts[1])
+        if len(s) >= 4:
+            s = s.zfill(6)
+            return int(s[:2]) * 60 + int(s[2:4])
+    except (ValueError, IndexError):
+        return None
+    return None
+
+
+def is_yizi_limit_up(stock: Dict) -> bool:
+    """
+    判断当日是否为一字涨停（缩量加速板）。
+    可靠判据：集合竞价/开盘5分钟内封死 + 全天0开板（筹码未经过交换检验）。
+    注意：换手率字段数据源口径不一致（小数/百分数混用），不作为硬判据。
+    """
+    if (stock.get('break_times') or 0) != 0:
+        return False
+    t_min = _parse_seal_time_minutes(stock.get('first_limit_up_time'))
+    if t_min is None or t_min > 575:  # 9:35后才封板不算一字
+        return False
+    return True
+
+
+def assess_divergence_state(stock: Dict, market_state: Dict) -> Dict[str, Any]:
+    """
+    评估个股当日"分歧/一致"节奏状态（游资交易节奏核心）：
+
+    - consensus                一致（一字/秒板封死，全天无分歧）
+                                 低位(1-3板)：强势可排队；高位(>=4板)：缩量加速陷阱
+    - divergence_to_consensus  分歧转一致（盘中开板1-2次后放量回封，封单回流）—— 最佳买点
+    - consensus_to_divergence  一致转分歧（开板后封单弱/未能有效回封）—— 卖点/不追
+    - high_divergence          高分歧（炸板3次以上）—— 不参与
+
+    市场砸盘系数过高(>=6)或炸板率>=35%时，分歧过大=无买点，整体收紧。
+    """
+    break_times = stock.get('break_times') or 0
+    boards = stock.get('limit_up_days', 1) or 1
+    seal_ratio = stock.get('seal_ratio') or 0
+    yizi = is_yizi_limit_up(stock)
+    smash = market_state.get('smash_coefficient')
+    explosion = market_state.get('explosion_rate', 0) or 0
+
+    market_high_div = (smash is not None and smash >= 6.0) or explosion >= 0.35
+
+    if yizi:
+        state = 'consensus'
+        label = '一致（一字缩量封死）'
+        action_hint = 'high_yizi_trap' if boards >= 4 else 'low_yizi_queue'
+    elif break_times >= 3:
+        state = 'high_divergence'
+        label = f'高分歧（全天炸板{break_times}次）'
+        action_hint = 'no_buy'
+    elif break_times >= 1 and seal_ratio >= 0.02:
+        state = 'divergence_to_consensus'
+        label = f'分歧转一致（开板{break_times}次后放量回封）'
+        action_hint = 'best_buy'
+    elif break_times >= 1:
+        state = 'consensus_to_divergence'
+        label = f'一致转分歧（开板{break_times}次封单偏弱）'
+        action_hint = 'sell_or_wait'
+    else:
+        state = 'consensus'
+        label = '一致（早盘封死无分歧）'
+        action_hint = 'normal'
+
+    # 高砸盘/高炸板率环境：分歧过大，除最强分歧转一致外全部收紧
+    if market_high_div and action_hint in ('best_buy', 'normal', 'low_yizi_queue'):
+        if state == 'divergence_to_consensus' and seal_ratio >= 0.05 and boards <= 4:
+            action_hint = 'best_buy_cautious'
+            label += '；但市场砸盘/炸板率偏高，仅轻仓'
+        else:
+            action_hint = 'no_buy_high_smash'
+            label += '；市场分歧过大（砸盘系数/炸板率高），无买点'
+
+    return {
+        'state': state,
+        'label': label,
+        'action_hint': action_hint,
+        'is_yizi': yizi,
+        'market_high_divergence': market_high_div,
+    }
+
 
 # ─────────────────────────── 个股评分 ───────────────────────────
 
@@ -713,6 +834,7 @@ def _score_seal_quality(stock: Dict, market_state: Dict) -> Tuple[float, str]:
     else:
         score -= 5
         reason_parts.append(f"封单比{seal_ratio:.2%}(弱)")
+    boards_sq = stock.get('limit_up_days', 1) or 1
     if 0.03 <= turnover <= 0.15:
         score += 15
         reason_parts.append(f"换手{turnover:.1%}(健康)")
@@ -720,14 +842,25 @@ def _score_seal_quality(stock: Dict, market_state: Dict) -> Tuple[float, str]:
         score += 5
         reason_parts.append(f"换手{turnover:.1%}(偏高)")
     else:
-        score += 8
-        reason_parts.append(f"换手{turnover:.1%}(偏低)")
+        if boards_sq >= 4 and (stock.get('break_times') or 0) == 0:
+            score -= 5
+            reason_parts.append(f"换手{turnover:.1%}({boards_sq}板缩量一字，筹码未交换，开板即承压)")
+        else:
+            score += 8
+            reason_parts.append(f"换手{turnover:.1%}(偏低)")
+    boards = stock.get('limit_up_days', 1) or 1
+    is_yizi = is_yizi_limit_up(stock)
     if break_times == 0:
-        score += 15
-        reason_parts.append("零开板")
+        if is_yizi and boards >= 4:
+            # 高位一字缩量：未经分歧检验，能买进的一字往往是出货，不给封板强分
+            score += 2
+            reason_parts.append(f"{boards}板一字封死(高位缩量加速，未经分歧，炸板风险高)")
+        else:
+            score += 15
+            reason_parts.append("零开板")
     elif break_times <= 2:
         score += 5
-        reason_parts.append(f"开板{break_times}次")
+        reason_parts.append(f"开板{break_times}次(分歧后回封，承接有效)")
     else:
         score -= 10
         reason_parts.append(f"开板{break_times}次(封板不稳)")
@@ -737,8 +870,12 @@ def _score_seal_quality(stock: Dict, market_state: Dict) -> Tuple[float, str]:
             minutes = h * 60 + m
             # 交易时段：9:30=570, 10:00=600, 11:30=690, 13:00=780, 14:00=840, 15:00=900
             if minutes <= 570:
-                score += 15
-                reason_parts.append(f"{first_time}封板(集合竞价/开盘秒板)")
+                if boards >= 4:
+                    score += 2
+                    reason_parts.append(f"{first_time}竞价/秒板({boards}板高位一字，缩量无换手，排板危险)")
+                else:
+                    score += 15
+                    reason_parts.append(f"{first_time}封板(集合竞价/开盘秒板，低位强势)")
             elif minutes <= 600:
                 score += 12
                 reason_parts.append(f"{first_time}封板(早盘快速封板)")
@@ -798,6 +935,21 @@ def _score_cap_fit(stock: Dict, market_state: Dict) -> Tuple[float, str]:
     return min(score, 100), '; '.join(reason_parts)
 
 def _score_volume_price(stock: Dict, market_state: Dict) -> Tuple[float, str]:
+    """
+    量价走势评分（首要维度）。
+    优先使用 volume_price_analyzer 的整体量价形态分析结果（在
+    generate_recommendations 中批量预计算并挂到 stock['_vp']）；
+    无预计算结果时走轻量兜底（量比+换手），保证函数可独立调用。
+    """
+    vp = stock.get('_vp')
+    if vp is not None:
+        reason_parts = [f"量价形态：{vp.get('pattern', '未知')}（{vp.get('action_gate', '')}）"]
+        reason_parts.extend(vp.get('signals', [])[:3])
+        if vp.get('risks'):
+            reason_parts.append("⚠️" + "；".join(vp.get('risks', [])[:2]))
+        return float(vp.get('score', 50)), '；'.join(reason_parts)
+
+    # ── 兜底：无引擎/无预计算时的轻量评分 ──
     volume_bias = stock.get('volume_bias') or 1.0
     turnover = stock.get('turnover_rate') or 0
     score = 50.0
@@ -917,9 +1069,45 @@ def score_stock(stock: Dict, market_state: Dict,
         elif cf_mult <= 0.5:
             total = max(0, total - 3)  # 弱资金面小幅减分
 
+    # ── 分歧/一致节奏调整（交易节奏核心，基于真实可成交性）──
+    divergence = assess_divergence_state(stock, market_state)
+    hint = divergence['action_hint']
+    is_high_yizi = divergence['is_yizi'] and (stock.get('limit_up_days', 1) or 1) >= 4
+    if hint == 'best_buy':
+        total += 6   # 分歧转一致回封：经分歧检验的买点，溢价高
+    elif hint == 'best_buy_cautious':
+        total += 2
+    elif hint == 'high_yizi_trap':
+        total -= 18  # 高位一字：排到即接盘
+    elif hint == 'no_buy':
+        total -= 15  # 高分歧炸板
+    elif hint == 'sell_or_wait':
+        total -= 8
+    elif hint == 'no_buy_high_smash':
+        total -= 10  # 砸盘系数过高，无买点
+    # low_yizi_queue / normal / consensus 不调整
+
+    # ── 量价走势闸门（首要依据：fail 一票否决，caution 降级）──
+    vp = stock.get('_vp')
+    vp_grade = None
+    vp_pattern = None
+    vp_gate = None
+    vp_veto = []
+    if vp is not None:
+        vp_grade = vp.get('grade')
+        vp_pattern = vp.get('pattern')
+        vp_gate = vp.get('action_gate')
+        vp_veto = vp.get('veto_reasons', [])
+        if vp_grade == 'fail':
+            total -= 25  # 量价结构恶化：一票否决（最终过滤阶段会直接剔除）
+        elif vp_grade == 'caution':
+            total -= 6   # 量价存疑：降权，仍可保留观察
+        elif vp_grade == 'pass':
+            total += 3   # 量价健康：小幅加分
+
     total = round(min(max(total, 0), 100), 1)
-    action = _suggest_action(total, stock, market_state)
-    risks = _generate_risks(stock, market_state, total)
+    action = _suggest_action(total, stock, market_state, divergence)
+    risks = _generate_risks(stock, market_state, total, divergence)
 
     # 获取龙头信息（用于结果输出）
     code = stock.get('code', '')
@@ -956,15 +1144,55 @@ def score_stock(stock: Dict, market_state: Dict,
         'concept': stock.get('concept', ''),
         'limit_up_days': stock.get('limit_up_days', 1),
         'seal_ratio': stock.get('seal_ratio', 0),
+        'is_yizi': divergence['is_yizi'],
+        'divergence_state': divergence['state'],
+        'divergence_label': divergence['label'],
+        'vp_grade': vp_grade,
+        'vp_pattern': vp_pattern,
+        'vp_gate': vp_gate,
+        'vp_veto': vp_veto,
+        'vp_score': round(vp['score'], 1) if vp is not None else None,
     }
 
-def _suggest_action(score: float, stock: Dict, market_state: Dict) -> str:
+def _suggest_action(score: float, stock: Dict, market_state: Dict,
+                    divergence: Optional[Dict] = None) -> str:
     boards = stock.get('limit_up_days', 1) or 1
     is_broken = stock.get('_from_break_pool', False)
     phase = market_state.get('cycle_phase', '蓄力爬升期')
     code = stock.get('code', '')
     dragon_map = market_state.get('dragon_map', {})
     dragon = dragon_map.get(code)
+
+    if divergence is None:
+        divergence = assess_divergence_state(stock, market_state)
+
+    # ── 一字板/分歧节奏硬规则（优先于一切龙头/评分判断）──
+    is_total_dragon = bool(dragon and dragon.get('dragon_type') == 'total_dragon')
+    if divergence['is_yizi'] and boards >= 4 and not is_total_dragon:
+        return '回避(高位一字缩量，排到即接盘，等分歧回封)'
+    if divergence['action_hint'] == 'no_buy':
+        return '回避(全天高分歧，封板不坚决)'
+    if divergence['action_hint'] == 'no_buy_high_smash':
+        return '观望(砸盘系数/炸板率过高，分歧过大无买点)'
+    if divergence['action_hint'] == 'sell_or_wait':
+        return '观望(一致转分歧，封单减弱，是卖点非买点)'
+    if divergence['action_hint'] in ('best_buy', 'best_buy_cautious'):
+        tag = '轻仓' if divergence['action_hint'] == 'best_buy_cautious' else ''
+        return f'{tag}打板/半路(分歧转一致回封，承接有效)'
+
+    # ── 量价走势闸门（首要依据）：量价 fail/caution 的动作收紧 ──
+    vp = stock.get('_vp')
+    if vp is not None:
+        if vp.get('grade') == 'fail':
+            return f'回避(量价结构不通过：{vp.get("pattern", "量价恶化")})'
+        if vp.get('grade') == 'caution':
+            # 量价存疑：只允许轻仓观察，不给打板
+            if score < 75:
+                return f'观望(量价存疑：{vp.get("pattern", "")}，等确认)'
+    if divergence['is_yizi'] and boards < 4:
+        if phase == '崩塌退潮期':
+            return '观望(退潮期不排一字)'
+        return '竞价排队(低位一字，强势但严格设止损)'
 
     # 龙头标的的动作建议更保守
     if dragon:
@@ -996,12 +1224,47 @@ def _suggest_action(score: float, stock: Dict, market_state: Dict) -> str:
     else:
         return '回避(综合评分偏低)'
 
-def _generate_risks(stock: Dict, market_state: Dict, score: float) -> List[str]:
+def _generate_risks(stock: Dict, market_state: Dict, score: float,
+                    divergence: Optional[Dict] = None) -> List[str]:
     risks = []
     boards = stock.get('limit_up_days', 1) or 1
     break_times = stock.get('break_times', 0) or 0
     explosion_rate = market_state.get('explosion_rate', 0)
     phase = market_state.get('cycle_phase', '蓄力爬升期')
+    smash = market_state.get('smash_coefficient')
+    if divergence is None:
+        divergence = assess_divergence_state(stock, market_state)
+
+    # ── 交易节奏纪律（用户实盘核心教训：三次一字开板回撤）──
+    if divergence['is_yizi'] and boards >= 4:
+        dragon = market_state.get('dragon_map', {}).get(stock.get('code', ''))
+        is_total = bool(dragon and dragon.get('dragon_type') == 'total_dragon')
+        if not is_total:
+            risks.append(f"⚠️{boards}板一字缩量：竞价排板能成交往往是资金出货，"
+                         f"当日无法有效介入，严禁竞价挂单，等次日分歧放量回封再看")
+        else:
+            risks.append(f"{boards}板市场总龙头一字：可少量排板但开板放量立即走，不补仓")
+    if divergence['state'] == 'divergence_to_consensus':
+        risks.append("分歧转一致回封是买点；若次日低开或开板不回封（转分歧），按卖点纪律离场")
+    if divergence['state'] == 'consensus_to_divergence':
+        risks.append("一致转分歧：封单减弱/开板不回封是卖点，不追不买")
+    if divergence['state'] == 'high_divergence':
+        risks.append("高分歧（多次炸板）：不具备买点，视为风险")
+    if smash is not None and smash >= 6.0:
+        risks.append(f"砸盘系数{smash:.1f}过高：分歧过大无买点，空仓或只看最强龙头分歧回封")
+
+    # ── 量价走势风险（首要依据）──
+    vp = stock.get('_vp')
+    if vp is not None:
+        if vp.get('grade') == 'fail':
+            for v in vp.get('veto_reasons', [])[:2]:
+                risks.append(f"⛔量价否决：{v}")
+        elif vp.get('grade') == 'caution':
+            for r_ in vp.get('risks', [])[:2]:
+                risks.append(f"量价警示：{r_}")
+        elif vp.get('signals'):
+            risks.append(f"量价：{vp.get('pattern','')}，{vp['signals'][0]}")
+
     if boards >= 5:
         risks.append(f"已{boards}连板，高位风险较大，注意控制仓位")
     if break_times >= 3:
@@ -1135,9 +1398,41 @@ def estimate_win_rate(stock_score: Dict, market_state: Dict,
                     elif sig_type == 'danger_zone':
                         base_rate *= 0.75
 
+    # ── 一字板/分歧节奏修正（可成交性决定真实胜率）──
+    is_yizi = stock_score.get('is_yizi', False)
+    div_state = stock_score.get('divergence_state', '')
+    is_total_dragon = bool(dragon_info and dragon_info.get('dragon_type') == 'total_dragon')
+    if is_yizi and boards >= 4:
+        if not is_total_dragon:
+            base_rate *= 0.55   # 非总龙头4板+一字：缩量加速，次日开板概率高
+            win_cap = min(win_cap, 0.45)
+        else:
+            base_rate *= 0.80   # 总龙头高位一字：仍强但开板风险上升
+    elif is_yizi and boards < 4:
+        base_rate *= 1.02       # 低位一字：正常强势
+    if div_state == 'divergence_to_consensus':
+        base_rate *= 1.08       # 分歧转一致回封：经分歧检验，次日溢价高
+        win_cap = min(0.90, max(win_cap, 0.75))
+    elif div_state == 'high_divergence':
+        base_rate *= 0.70
+    elif div_state == 'consensus_to_divergence':
+        base_rate *= 0.80
+
+    # ── 整体量价走势修正（首要依据）──
+    vp_grade = stock_score.get('vp_grade')
+    if vp_grade == 'fail':
+        base_rate *= 0.60
+        win_cap = min(win_cap, 0.35)   # 量价恶化：胜率封顶35%
+    elif vp_grade == 'caution':
+        base_rate *= 0.88
+    elif vp_grade == 'pass':
+        base_rate *= 1.06              # 量价健康：温和提升
+        win_cap = min(0.92, win_cap + 0.02)
+
     # 龙头胜率兜底：B级以上龙头在非衰退期，胜率不应低于45%
     # （否则与龙头身份矛盾，说明修正因子过度惩罚）
-    if dragon_info and lifecycle != 'decline':
+    # 注意：高位一字惩罚后的胜率可以低于兜底（一字风险是实盘硬教训）
+    if dragon_info and lifecycle != 'decline' and not (is_yizi and boards >= 4 and not is_total_dragon):
         certainty_floor = {'SS': 0.65, 'S': 0.58, 'A': 0.50, 'B': 0.45}
         floor = certainty_floor.get(certainty, 0.45)
         base_rate = max(base_rate, floor)
@@ -1194,8 +1489,54 @@ def generate_recommendations(date: str, top_n: int = 5,
         except Exception as e:
             logger.warning(f"board_calculator覆盖失败: {e}")
 
+    # ── 量价走势预计算（首要依据）：对全部候选用量价引擎批量分析 ──
+    # 每只股票挂 _vp 结果；grade=fail 的在后续硬过滤阶段一票否决。
+    if _HAS_VP_ANALYZER and all_candidates:
+        try:
+            vp_market = market_state.get('volume_price_market')
+            vp_conn = sqlite3.connect(db_path)
+            vp_conn.row_factory = sqlite3.Row
+            for s in all_candidates:
+                code = s.get('code', '')
+                hist = load_stock_history(vp_conn, code, date, days=10)
+                dinfo = market_state.get('dragon_map', {}).get(code)
+                is_td = bool(dinfo and dinfo.get('dragon_type') == 'total_dragon')
+                try:
+                    s['_vp'] = analyze_stock_volume_price(
+                        s, hist, market_state, is_total_dragon=is_td)
+                except Exception as ve:
+                    logger.warning(f"量价分析失败 {code}: {ve}")
+                    s['_vp'] = None
+            vp_conn.close()
+            if vp_market:
+                logger.info(f"[量价] 市场闸门={vp_market.get('gate')}，"
+                            f"状态={vp_market.get('state_label')}，"
+                            f"评分={vp_market.get('score')}")
+        except Exception as e:
+            logger.warning(f"量价预计算失败: {e}")
+
+    # ── 硬过滤：4板及以上仍为一字涨停的标的，除市场总龙头外一律不纳入推荐 ──
+    # 逻辑：高位缩量一字=市场一致到极致，筹码未经分歧交换；
+    # 竞价/排板能成交往往就是场内资金借高开出货的开板日（实盘三次回撤教训）。
+    # 仅 dragon_detector 确认的 total_dragon（市场总龙头）享有豁免，但仍降仓位。
+    kept_candidates = []
+    excluded_yizi = []
+    for s in all_candidates:
+        b = s.get('limit_up_days', 1) or 1
+        if b >= 4 and is_yizi_limit_up(s):
+            dinfo = market_state.get('dragon_map', {}).get(s.get('code', ''))
+            is_total = bool(dinfo and dinfo.get('dragon_type') == 'total_dragon')
+            if not is_total:
+                excluded_yizi.append(f"{s.get('name','')}({b}板一字)")
+                continue
+        kept_candidates.append(s)
+    if excluded_yizi:
+        logger.info(f"[一字硬过滤] 排除{len(excluded_yizi)}只4板+一字(非总龙头): "
+                    f"{', '.join(excluded_yizi)}")
+    all_candidates = kept_candidates
+
     if not all_candidates:
-        logger.info(f"[{date}] 无候选股票，返回空推荐")
+        logger.info(f"[{date}] 无候选股票（或全部被一字硬过滤），返回空推荐")
         return []
     max_board = max(s.get('limit_up_days', 1) for s in all_candidates)
     weights = _get_current_weights(db_path)
@@ -1208,6 +1549,20 @@ def generate_recommendations(date: str, top_n: int = 5,
         result['reason'] = _build_reason_string(result)
         result['_stock_data'] = stock
         scored_list.append(result)
+
+    # ── 量价一票否决（首要依据）：量价结构 fail 的标的直接剔除，不进入推荐 ──
+    vp_failed = []
+    kept = []
+    for r in scored_list:
+        if r.get('vp_grade') == 'fail':
+            veto = '；'.join(r.get('vp_veto', [])[:1]) or '量价结构恶化'
+            vp_failed.append(f"{r.get('name','')}({r.get('vp_pattern','量价fail')}:{veto[:24]})")
+            continue
+        kept.append(r)
+    if vp_failed:
+        logger.info(f"[量价闸门] 一票否决剔除{len(vp_failed)}只: {', '.join(vp_failed[:8])}")
+    scored_list = kept
+
     final_recommendations = _filter_by_confidence_levels(
         scored_list, allowed_levels, max_board, top_n
     )
@@ -1263,6 +1618,11 @@ def _filter_by_confidence_levels(
         if lifecycle == 'decline':
             continue
 
+        # 高位一字硬过滤：4板+一字只有市场总龙头可豁免
+        boards = item.get('limit_up_days', 1) or 1
+        if item.get('is_yizi') and boards >= 4 and dinfo.get('dragon_type') != 'total_dragon':
+            continue
+
         mapped_level = level
         if mapped_level not in allowed_levels:
             continue
@@ -1305,6 +1665,9 @@ def _filter_by_confidence_levels(
                 if level_order.get(level, 4) < level_order.get(dragon_level, 3):
                     continue  # 传统条件等级高于龙头等级，跳过
             stock = item['_stock_data']
+            # 高位一字非总龙头：不进入传统条件推荐
+            if item.get('is_yizi') and (item.get('limit_up_days', 1) or 1) >= 4:
+                continue
             try:
                 if needs_max_board:
                     is_match = filter_fn(stock, max_board)
@@ -1380,6 +1743,10 @@ def _get_current_weights(db_path: str) -> Dict[str, float]:
 
 def _build_reason_string(result: Dict) -> str:
     parts = []
+    # 量价走势是首要依据，量价形态标签前置展示
+    if result.get('vp_pattern'):
+        gate_tag = result.get('vp_gate') or ''
+        parts.append(f"【量价·{result['vp_pattern']}】{gate_tag}")
     reasons = result.get('dimension_reasons', {})
     scores = result.get('dimension_scores', {})
     sorted_dims = sorted(scores.items(), key=lambda x: x[1], reverse=True)
@@ -1387,9 +1754,9 @@ def _build_reason_string(result: Dict) -> str:
     for dim, score in top_dims:
         if dim in reasons and score >= 50:
             parts.append(reasons[dim])
-    if not parts:
+    if len(parts) <= 1:
         parts.append(reasons.get('concept_heat', ''))
-    return '；'.join(parts)
+    return '；'.join(p for p in parts if p)
 
 def _save_recommendations(date: str, recommendations: List[Dict], db_path: str):
     conn = get_conn(db_path)

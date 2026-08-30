@@ -571,6 +571,15 @@ def _run_recommend_task(task_id, params):
                 "historical_win_rate": r.get("historical_win_rate", 0.50),
                 "condition_match": r.get("condition_match", ""),
                 "dragon_info": r.get("dragon_info"),
+                "is_yizi": r.get("is_yizi", False),
+                "divergence_state": r.get("divergence_state", ""),
+                "divergence_label": r.get("divergence_label", ""),
+                "seal_ratio": r.get("seal_ratio", 0),
+                "vp_grade": r.get("vp_grade"),
+                "vp_pattern": r.get("vp_pattern", ""),
+                "vp_gate": r.get("vp_gate", ""),
+                "vp_score": r.get("vp_score"),
+                "vp_veto": r.get("vp_veto", []) if isinstance(r.get("vp_veto"), list) else [],
             })
         with tasks_lock:
             tasks[task_id]["progress"] = 100
@@ -828,8 +837,16 @@ def handle_dashboard():
         from knowledge_base import KnowledgeBase
 
         analyzer = MarketAnalyzer(db)
-        all_dates = db.get_all_dates()
-        latest_date = all_dates[-1] if all_dates else None
+        # 数据日期锚点：三个页面统一以涨停明细表最新日期为准（与每日分析/智能推荐同源）
+        latest_date = None
+        try:
+            _row = db.conn.execute("SELECT MAX(date) AS d FROM xgt_limit_up_detail").fetchone()
+            latest_date = _row[0] if _row else None
+        except Exception:
+            pass
+        if not latest_date:
+            all_dates = db.get_all_dates()
+            latest_date = all_dates[-1] if all_dates else None
 
         analysis_summary = {}
         predictions = {}
@@ -869,6 +886,28 @@ def handle_dashboard():
                     "concept_heat": analysis.get("concept_heat", {}),
                 }
 
+                # 涨停数兜底：分析器口径缺失/为0时直接取明细表计数，保证三页数字一致
+                if not analysis_summary.get("limit_up_count"):
+                    try:
+                        _cnt = db.conn.execute(
+                            "SELECT COUNT(*) FROM xgt_limit_up_detail WHERE date=?",
+                            (latest_date,)).fetchone()
+                        analysis_summary["limit_up_count"] = _cnt[0] if _cnt else 0
+                    except Exception:
+                        pass
+
+                # 最高连板统一为 board_calculator 真实口径（与砸盘图表/连板梯队/
+                # 进场确定性/龙头/推荐同源），避免 MarketAnalyzer 直接用 API 的
+                # limit_up_days 字段（14.6%不匹配）导致卡片6板、图表7板的口径冲突
+                try:
+                    from board_calculator import BoardCalculator
+                    _bc = BoardCalculator(db.conn)
+                    _real_max = _bc.get_daily_max_boards(latest_date, db.conn)
+                    if _real_max and _real_max > 0:
+                        analysis_summary["max_continuous_boards"] = _real_max
+                except Exception as e:
+                    logger.warning(f"真实最高连板口径统一失败: {e}")
+
                 try:
                     kb = KnowledgeBase(db)
                     predictor = Predictor(db, kb)
@@ -894,6 +933,15 @@ def handle_dashboard():
         except Exception as e:
             logger.warning(f"变盘节点检测失败: {e}")
 
+        # 市场量价环境（整体量价走势=筛选/进场首要依据，仪表盘展示闸门状态）
+        volume_price_market = None
+        try:
+            from volume_price_analyzer import analyze_market_volume_price
+            if latest_date:
+                volume_price_market = analyze_market_volume_price(latest_date, DB_PATH)
+        except Exception as e:
+            logger.warning(f"市场量价环境分析失败: {e}")
+
         db.close()
 
         return {
@@ -902,7 +950,8 @@ def handle_dashboard():
                 "summary": analysis_summary,
                 "smash_chart": smash_chart,
                 "turning_points": turning_points_data,
-                "predictions": predictions
+                "predictions": predictions,
+                "volume_price_market": volume_price_market
             }
         }
     except Exception as e:
@@ -1058,6 +1107,8 @@ def handle_entry_certainty(params):
                 "ORDER BY composite_score DESC LIMIT ?",
                 (date_str, top_n))
         db.close()
+
+        # 行 → 字典 + JSON 字段解析
         results = []
         for r in rows:
             r = dict(r)
@@ -1069,8 +1120,42 @@ def handle_entry_certainty(params):
                         r[k] = []
                 else:
                     r[k] = []
+            if r.get('dim_detail'):
+                try:
+                    r['dim_detail'] = json.loads(r['dim_detail'])
+                except Exception:
+                    r['dim_detail'] = None
+            else:
+                r['dim_detail'] = None
             results.append(r)
-        return {"success": True, "data": {"date": date_str, "results": results}}
+
+        # ── 质量门槛（宁缺毋滥）：综合确定性过低 / 无题材归属 / 量价否决的标的
+        # 不进入面板展示。低分无题材票曾导致"12只B级20分票"刷屏，与谨慎信号自相矛盾。
+        def _passes_gate(r):
+            score = r.get('composite_score') or 0
+            grade = (r.get('certainty_grade') or '').upper()
+            if score < 50 or grade in ('D',):
+                return False
+            # 题材维度过低（无明确概念标签/无板块联动）直接剔除
+            if (r.get('theme_score') is not None and r.get('theme_score') < 40):
+                return False
+            # 量价闸门 fail（一票否决）不进确定性面板
+            dd = r.get('dim_detail')
+            if isinstance(dd, dict):
+                vp = dd.get('volume_price')
+                if isinstance(vp, dict) and vp.get('grade') == 'fail':
+                    return False
+            return True
+
+        qualified = [r for r in results if _passes_gate(r)]
+        filtered_out = len(results) - len(qualified)
+        return {"success": True, "data": {
+            "date": date_str,
+            "results": qualified,
+            "total_analyzed": len(results),
+            "filtered_out": filtered_out,
+            "gate_rule": "已过滤综合分<50 / D级 / 题材分<40(无板块联动) / 量价否决 的低确定性标的",
+        }}
     except Exception as e:
         logger.error(f"entry_certainty error: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
@@ -1217,7 +1302,7 @@ def handle_daily_latest(params):
             logger.warning(f"operation_plans read skipped: {e}")
         result["operation_plans"] = plan_list
 
-        # ── 6. 进场确定性（结构化列表） ──
+        # ── 6. 进场确定性（结构化列表，套用与仪表盘面板相同的质量门槛） ──
         eca_list = []
         try:
             eca = conn.execute(
@@ -1234,6 +1319,14 @@ def handle_daily_latest(params):
                             r[k] = [] if k != 'dimensions' else {}
                     else:
                         r[k] = [] if k != 'dimensions' else {}
+                # 质量门槛：综合分<50 / D级 / 题材分<40（无板块联动）不展示
+                _score = r.get('composite_score') or 0
+                _grade = (r.get('certainty_grade') or '').upper()
+                _theme = r.get('theme_score')
+                if _score < 50 or _grade == 'D':
+                    continue
+                if _theme is not None and _theme < 40:
+                    continue
                 eca_list.append(r)
         except Exception as e:
             logger.warning(f"entry_certainty read skipped: {e}")
@@ -1262,15 +1355,32 @@ def handle_daily_latest(params):
         ).fetchall()
         result["concept_heat"] = [dict(r) for r in concepts]
 
-        # ── 9. 连板梯队 ──
-        tiers = conn.execute(
-            "SELECT limit_up_days, COUNT(*) as cnt, "
-            "GROUP_CONCAT(name) as stocks "
-            "FROM xgt_limit_up_detail WHERE date = ? "
-            "GROUP BY limit_up_days ORDER BY limit_up_days DESC",
-            (date_str,)
-        ).fetchall()
-        result["board_tiers"] = [dict(r) for r in tiers]
+        # ── 9. 连板梯队（统一 board_calculator 真实连板口径，与最高连板卡/砸盘图表一致）──
+        tiers = []
+        try:
+            from board_calculator import BoardCalculator
+            _bc = BoardCalculator(conn)
+            _stocks = _bc.get_daily_stocks(date_str, conn)
+            _tier_map = {}
+            for s in _stocks:
+                b = s.get('consecutive_boards') or 1
+                _tier_map.setdefault(b, []).append(s.get('name', ''))
+            tiers = [
+                {"limit_up_days": b, "cnt": len(names),
+                 "stocks": ','.join([n for n in names if n][:12])}
+                for b, names in sorted(_tier_map.items(), reverse=True)
+            ]
+        except Exception as e:
+            logger.warning(f"board tiers 真实口径失败，回退SQL: {e}")
+            _rows = conn.execute(
+                "SELECT limit_up_days, COUNT(*) as cnt, "
+                "GROUP_CONCAT(name) as stocks "
+                "FROM xgt_limit_up_detail WHERE date = ? "
+                "GROUP BY limit_up_days ORDER BY limit_up_days DESC",
+                (date_str,)
+            ).fetchall()
+            tiers = [dict(r) for r in _rows]
+        result["board_tiers"] = tiers
 
         conn.close()
         return {"success": True, "data": result}
@@ -1318,6 +1428,10 @@ def handle_recommend_latest(params):
                 "historical_win_rate": r.get("historical_win_rate", 0.50),
                 "condition_match": r.get("condition_match", ""),
                 "dragon_info": r.get("dragon_info"),
+                "is_yizi": r.get("is_yizi", False),
+                "divergence_state": r.get("divergence_state", ""),
+                "divergence_label": r.get("divergence_label", ""),
+                "seal_ratio": r.get("seal_ratio", 0),
             })
 
         # 从数据库读取进场确定性 + 操作计划（如果已有分析结果）
@@ -1855,15 +1969,15 @@ def run_scheduler():
         time.sleep(60)
 
 
-# ============ ★ 修改：定时任务，获取 daily_result 并传递给通知函数 ============
-def scheduled_fetch_and_recommend():
+# ============ 定时任务：按 slot 分流推送（竞价作战卡/盘中速报/盘后专项） ============
+def scheduled_fetch_and_recommend(slot="15:01"):
+    """slot: 09:25=竞价作战卡 | 09:46/11:30/14:30=盘中速报 | 15:01=盘后专项"""
+    logger.info(f"定时任务开始({slot}): 获取数据并生成分析")
     today = datetime.now().strftime("%Y-%m-%d")
     is_trading, msg = TradingDayChecker.is_trading_day(today)
     if not is_trading:
-        logger.info(f"定时任务跳过: {msg}")
+        logger.info(f"定时任务跳过({slot}): {msg}")
         return
-
-    logger.info("定时任务开始执行: 获取数据并生成推荐")
     try:
         result = run_fetch(date_str=today)
         if result is None or result == 0:
@@ -1880,78 +1994,33 @@ def scheduled_fetch_and_recommend():
             logger.warning("定时任务: 无法确定分析日期")
             return
 
-        # ★ 执行完整的每日分析，获取返回结果
-        daily_result = None
+        # 执行完整每日分析（各模块结果落库，保证页面与通知读取同一份数据）
         try:
             from main import run_daily
-            daily_result = run_daily()
+            run_daily()
         except Exception as e:
-            logger.warning(f"定时任务: run_daily 完整流程失败（降级为仅推荐）: {e}")
+            logger.warning(f"定时任务: run_daily 完整流程失败（降级为仅通知）: {e}")
 
-        if _smart_recommender is None:
-            logger.warning("定时任务: 智能推荐模块未加载")
-            return
-
-        market_state = _smart_recommender.analyze_current_market(data_date, DB_PATH)
-        recs = _smart_recommender.generate_recommendations(data_date, top_n=5, db_path=DB_PATH)
-        next_day = _smart_recommender.recommend_for_next_day(data_date, DB_PATH)
-
-        rec_serialized = []
-        for r in recs:
-            rec_serialized.append({
-                "code": r.get("code", ""),
-                "name": r.get("name", ""),
-                "total_score": r.get("total_score", 0),
-                "win_rate": r.get("win_rate", 0),
-                "grade": r.get("grade", ""),
-                "reason": r.get("reason", ""),
-                "risk_notes": r.get("risk_notes", []),
-                "suggested_action": r.get("suggested_action", ""),
-                "concept": r.get("concept", ""),
-                "limit_up_days": r.get("limit_up_days", 1),
-                "dimension_scores": r.get("dimension_scores", {}),
-                "dimension_reasons": r.get("dimension_reasons", {}),
-                "confidence_level": r.get("confidence_level", "C"),
-                "confidence_name": r.get("confidence_name", "C级·中等"),
-                "historical_win_rate": r.get("historical_win_rate", 0.50),
-                "condition_match": r.get("condition_match", ""),
-            })
-
-        # ★ 传递 daily_result 给通知函数
-        send_recommend_notification(data_date, rec_serialized, market_state, next_day, daily_result=daily_result)
-        logger.info("定时任务: 微信通知发送完成")
-
-        # 检查是否命中"新总龙头诞生节点"，命中则额外推送
+        # 按时间点分流推送：15:01盘后专项 / 09:25竞价作战卡 / 其余盘中速报
+        # 龙头诞生、空仓信号、龙头迹象均已并入盘后专项报告，不再单独推送
         try:
-            from turning_point_detector import (
-                check_latest_and_notify,
-                check_latest_risk_and_notify,
-                check_dragon_imminent_and_notify,
+            from notification_scheduler import (
+                build_auction_briefing, build_intraday_flash,
+                build_close_report, push_with_dedup,
             )
-            imminent = check_dragon_imminent_and_notify(notifier=notifier)
-            if imminent and not imminent.get("skipped"):
-                top = imminent["candidates"][0]
-                logger.info(
-                    f"定时任务: 🚀龙头即将诞生预警已推送 - "
-                    f"{top['name']}({top['boards']}板)等{len(imminent['candidates'])}只候选"
-                )
-            birth_node = check_latest_and_notify(notifier=notifier)
-            if birth_node:
-                logger.info(
-                    f"定时任务: 🐉新总龙头诞生节点已推送 - "
-                    f"{birth_node['dragon']['name']}({birth_node['dragon']['code']})"
-                )
-            risk_node = check_latest_risk_and_notify(notifier=notifier)
-            if risk_node and not risk_node.get("skipped"):
-                sig = risk_node["signal"]
-                logger.info(
-                    f"定时任务: ⚠️大盘空仓信号已推送 - "
-                    f"{sig['name']}({risk_node['date']})"
-                )
+            if slot == "15:01":
+                push_with_dedup(notifier, build_close_report(DB_PATH),
+                                "close", slot, db_path=DB_PATH)
+            elif slot == "09:25":
+                push_with_dedup(notifier, build_auction_briefing(DB_PATH),
+                                "auction", slot, db_path=DB_PATH)
+            else:
+                push_with_dedup(notifier, build_intraday_flash(slot, DB_PATH),
+                                "intraday", slot, db_path=DB_PATH)
         except Exception as e:
-            logger.warning(f"定时任务: 龙头诞生/空仓信号检测失败: {e}")
+            logger.warning(f"定时任务: 通知生成/发送失败: {e}", exc_info=True)
     except Exception as e:
-        logger.error(f"定时任务: 生成推荐或发送通知失败 {e}")
+        logger.error(f"定时任务: 主流程失败 {e}", exc_info=True)
 
 
 # ============ 启动服务器 ============
@@ -2005,15 +2074,21 @@ def main():
         print("[DB] entry_certainty_analysis 表已就绪")
     except Exception as e:
         print(f"[WARN] 进场确定性表初始化失败: {e}")
+    try:
+        from notification_scheduler import init_tables as notif_init
+        notif_init(DB_PATH)
+        print("[DB] wechat_push_log 表已就绪（通知去重）")
+    except Exception as e:
+        print(f"[WARN] 通知去重表初始化失败: {e}")
 
     try:
-        schedule.every().day.at("09:25").do(scheduled_fetch_and_recommend)
-        schedule.every().day.at("09:46").do(scheduled_fetch_and_recommend)
-        schedule.every().day.at("11:30").do(scheduled_fetch_and_recommend)
-        schedule.every().day.at("14:30").do(scheduled_fetch_and_recommend)
-        schedule.every().day.at("15:01").do(scheduled_fetch_and_recommend)
+        schedule.every().day.at("09:25").do(scheduled_fetch_and_recommend, slot="09:25")
+        schedule.every().day.at("09:46").do(scheduled_fetch_and_recommend, slot="09:46")
+        schedule.every().day.at("11:30").do(scheduled_fetch_and_recommend, slot="11:30")
+        schedule.every().day.at("14:30").do(scheduled_fetch_and_recommend, slot="14:30")
+        schedule.every().day.at("15:01").do(scheduled_fetch_and_recommend, slot="15:01")
         threading.Thread(target=run_scheduler, daemon=True).start()
-        print("[SCHEDULE] 交易日定时任务已启用: 9:25, 9:46, 11:30, 14:30, 15:01")
+        print("[SCHEDULE] 交易日定时任务已启用: 9:25竞价作战卡, 9:46/11:30/14:30盘中速报, 15:01盘后专项")
     except Exception as e:
         print(f"[WARN] 定时任务设置失败: {e}")
 

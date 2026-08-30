@@ -40,6 +40,21 @@ except ImportError:
         BoardCalculator = None
         VALID_DATA_START = None
 
+# 整体量价走势分析（进场决策首要依据：量能阶梯/换手轨迹/封单配合/分歧节奏）
+try:
+    from volume_price_analyzer import (
+        analyze_stock_volume_price, analyze_market_volume_price
+    )
+    _HAS_VP_ANALYZER = True
+except ImportError:
+    try:
+        from core.volume_price_analyzer import (
+            analyze_stock_volume_price, analyze_market_volume_price
+        )
+        _HAS_VP_ANALYZER = True
+    except ImportError:
+        _HAS_VP_ANALYZER = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -214,6 +229,15 @@ def _safe_turnover(tr) -> Optional[float]:
         return None
 
 
+def _is_yizi(stock) -> bool:
+    """判断一字缩量板：9:35前封死且全天0开板（筹码未经分歧交换）。
+    换手率口径不一致，不作硬判据。"""
+    if (stock.get('break_times') or 0) != 0:
+        return False
+    t = _parse_time_to_minutes(stock.get('first_limit_up_time'))
+    return t is not None and t <= 575
+
+
 # ══════════════════════════════════════════════════════════════
 # 主分析类
 # ══════════════════════════════════════════════════════════════
@@ -242,6 +266,29 @@ class EntryCertaintyAnalyzer:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _get_smash_coefficient(self, date: Optional[str]) -> Optional[float]:
+        """读取当日砸盘系数（市场分歧度核心指标），缺失则取最近一日"""
+        if not date:
+            return None
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT smash_coefficient FROM smash_coefficients WHERE trade_date=?",
+                (date,)
+            ).fetchone()
+            if row and row['smash_coefficient'] is not None:
+                return row['smash_coefficient']
+            row = conn.execute(
+                "SELECT smash_coefficient FROM smash_coefficients "
+                "WHERE trade_date < ? AND smash_coefficient IS NOT NULL "
+                "ORDER BY trade_date DESC LIMIT 1", (date,)
+            ).fetchone()
+            return row['smash_coefficient'] if row else None
+        except Exception:
+            return None
+        finally:
+            conn.close()
+
     def analyze_stock(self, date: str, code: str,
                       dragon_info: Optional[Dict] = None) -> Dict[str, Any]:
         """
@@ -266,6 +313,23 @@ class EntryCertaintyAnalyzer:
             sector = self._analyze_sector(conn, date, stock.get('concept', ''), board_calc)
             history = self._load_recent_history(conn, code, date, days=10, board_calc=board_calc)
 
+            # ── 首要闸门：整体量价走势分析（先于六大维度，量价不通过则直接收紧）──
+            vp_gate = None
+            if _HAS_VP_ANALYZER:
+                try:
+                    is_td = bool(dragon_info and dragon_info.get('dragon_type') == 'total_dragon')
+                    vp_market_state = {
+                        'smash_coefficient': self._get_smash_coefficient(date),
+                        'explosion_rate': market.get('explosion_rate', 0) or 0,
+                    }
+                    vp_gate = analyze_stock_volume_price(
+                        stock, history, vp_market_state, is_total_dragon=is_td)
+                    # 注：市场级闸门不在此逐股重算（个股引擎内部已用更严阈值
+                    # smash≥6.0/炸板率≥35% 覆盖；市场级结果由 main/app/推荐层独立调用）
+                except Exception as e:
+                    logger.warning(f"量价闸门分析失败 {code}: {e}")
+                    vp_gate = None
+
             # 六大维度分析
             d1 = self._dimension_theme_strength(stock, sector, market)
             d2 = self._dimension_positioning(stock, sector, history)
@@ -277,11 +341,13 @@ class EntryCertaintyAnalyzer:
             )
 
             dimensions = [d1, d2, d3, d4, d5, d6]
-            composite = self._composite_score(dimensions, stock, dragon_info, market)
+            composite = self._composite_score(dimensions, stock, dragon_info, market,
+                                               vp_gate=vp_gate)
 
             # 生成具体操作指令
             operation = self._generate_operation(
-                stock, composite, dragon_info, market, dimensions
+                stock, composite, dragon_info, market, dimensions,
+                vp_gate=vp_gate
             )
 
             return {
@@ -301,6 +367,7 @@ class EntryCertaintyAnalyzer:
                 },
                 'composite': composite,
                 'operation': operation,
+                'volume_price': vp_gate,
                 'market_context': market,
             }
         finally:
@@ -745,6 +812,7 @@ class EntryCertaintyAnalyzer:
         break_times = stock.get('break_times') or 0
         first_time = _parse_time_to_minutes(stock.get('first_limit_up_time'))
         boards = stock.get('limit_up_days', 1) or 1
+        is_yizi = _is_yizi(stock)
 
         # 封单比（注意：实证显示整体区分度弱，但极端值有意义）
         if seal_ratio >= 0.05:
@@ -785,17 +853,25 @@ class EntryCertaintyAnalyzer:
 
         # 开板次数
         if break_times == 0:
-            score += 15
-            signals.append("一字封死（无开板）")
+            if is_yizi and boards >= 4:
+                score += 3
+                risks.append(f"{boards}板一字封死无分歧（缩量加速，未经筹码交换，"
+                             f"开板日杀伤力大；只看不排）")
+            else:
+                score += 15
+                signals.append("封死无开板" + f"（{boards}板低位强势）" if boards < 4 else "")
         elif break_times == 1:
-            score += 5
-            signals.append("开板1次（分歧后回封）")
+            score += 8
+            signals.append("开板1次后回封（分歧转一致，健康换手，买点）")
+        elif break_times == 2:
+            score += 2
+            signals.append("开板2次后回封（分歧偏大但承接尚可）")
         elif break_times <= 3:
             score -= 5
             risks.append(f"开板{break_times}次（分歧较大）")
         else:
             score -= 20
-            risks.append(f"开板{break_times}次（封板极弱）")
+            risks.append(f"开板{break_times}次（封板极弱，一致转分歧=卖点）")
 
         # 封单变化趋势（ai_features_cache）
         seal_change = stock.get('seal_ratio_change')
@@ -843,30 +919,51 @@ class EntryCertaintyAnalyzer:
         first_time = _parse_time_to_minutes(stock.get('first_limit_up_time'))
         volume_bias = stock.get('volume_bias')
         boards = stock.get('limit_up_days', 1) or 1
+        break_times = stock.get('break_times') or 0
+        is_yizi = _is_yizi(stock)
 
-        # 竞价强度代理
+        # 竞价强度代理 —— 区分"缩量一字"与"放量换手封板"
         if first_time:
-            if first_time <= 566:  # 9:26前（含集合竞价）
-                score += 30
-                signals.append("集合竞价封板（竞价超预期，资金抢筹）")
-            elif first_time <= 575:  # 9:35前
-                score += 20
-                signals.append("开盘5分钟内封板（盘口极强）")
+            if first_time <= 575 and break_times == 0:
+                # 一字/秒板且全天无分歧：低位=抢筹，高位=缩量加速陷阱
+                if boards >= 4:
+                    score -= 12
+                    risks.append(f"{boards}板竞价一字封死（缩量无换手，竞价排板能成交=开板接盘风险，"
+                                 f"次日必须分歧放量回封才可介入）")
+                else:
+                    score += 25
+                    signals.append(f"集合竞价封板（{boards}板低位，资金抢筹，可严格止损排队）")
+            elif first_time <= 575:
+                # 早盘封板但有开板：分歧后回封，真实承接
+                score += 22
+                signals.append("开盘快速封板且有开板回封（分歧转一致，承接有效，比一字更可参与）")
             elif first_time <= 600:
                 score += 12
                 signals.append("开盘30分钟内封板（盘口偏强）")
             else:
                 score += 0  # 非竞价强势
 
+        # 分歧转一致（盘中开板1-2次后回封）—— 游资标准买点
+        if 1 <= break_times <= 2:
+            score += 8
+            signals.append(f"盘中开板{break_times}次后回封（分歧转一致，筹码交换充分，买点）")
+        elif break_times >= 3:
+            score -= 12
+            risks.append(f"全天炸板{break_times}次（高分歧封不住，无买点）")
+
         # 量比反映参与度
         if volume_bias:
             vb = float(volume_bias)
-            if vb >= 3.0 and first_time and first_time <= 600:
+            if vb >= 3.0 and first_time and first_time <= 600 and not (is_yizi and boards >= 4):
                 score += 10
                 signals.append(f"竞价放量（量比{vb:.1f}）+早封=真抢筹")
-            elif vb < 0.8 and first_time and first_time <= 575:
-                score += 5
-                signals.append(f"缩量秒板（量比{vb:.1f}）=惜售")
+            elif vb < 0.8 and is_yizi:
+                if boards >= 4:
+                    score -= 8
+                    risks.append(f"高位缩量秒板（量比{vb:.1f}）=筹码未交换，一致到极致即卖点前兆")
+                else:
+                    score += 5
+                    signals.append(f"缩量秒板（量比{vb:.1f}）=低位惜售")
             elif vb > 5 and (not first_time or first_time > 690):
                 score -= 10
                 risks.append(f"尾盘放量（量比{vb:.1f}）=对倒/出货嫌疑")
@@ -971,9 +1068,13 @@ class EntryCertaintyAnalyzer:
 
         # 6. 首封时间
         if first_time is not None:
-            if first_time <= 570:
+            if first_time <= 570 and boards >= 4:
+                # 高位一字：yizi桶0.428的高概率不适用（缩量无换手，开板风险大）
+                time_bucket = 'mid'
+                time_label = f'{boards}板高位一字(谨慎)'
+            elif first_time <= 570:
                 time_bucket = 'yizi'
-                time_label = '一字板'
+                time_label = '一字板(低位)'
             elif first_time <= 600:
                 time_bucket = 'early'
                 time_label = '早盘封'
@@ -1036,14 +1137,40 @@ class EntryCertaintyAnalyzer:
                 cross_bonus = max(cross_bonus, (cross_p - bayes_prob) * 0.5)
                 cross_signals.append(f"3板+0炸+封单≥3%（历史{cross_p:.0%}）")
 
-        # 一字板+>=2板 = 51.5%
-        if first_time is not None and first_time <= 570 and boards >= 2:
+        # 一字板+2~3板 = 51.5%（仅低位有效；4板以上一字是陷阱，不适用此加成）
+        if first_time is not None and first_time <= 570 and boards in (2, 3) and break_times == 0:
             cross_p = PROB_CROSS_FACTORS['yizi+boards2']
             if cross_p > bayes_prob + cross_bonus:
                 cross_bonus = max(cross_bonus, (cross_p - bayes_prob) * 0.4)
-                cross_signals.append(f"一字连板（历史{cross_p:.0%}）")
+                cross_signals.append(f"低位一字连板（历史{cross_p:.0%}）")
 
         bayes_prob += cross_bonus
+
+        # ── 高位一字缩量惩罚（实盘核心教训：竞价排到一字=接盘开板日）──
+        # 4板及以上一字：全天0分歧、筹码未交换，次日开板分歧是大概率事件，
+        # 即使封单大也不给次日涨停高概率；非总龙头尤其危险。
+        is_high_yizi = (first_time is not None and first_time <= 575
+                        and break_times == 0 and boards >= 4)
+        is_total_dragon = bool(dragon_info and dragon_info.get('dragon_type') == 'total_dragon')
+        if is_high_yizi:
+            if not is_total_dragon:
+                bayes_prob = min(bayes_prob, 0.28)
+                cross_signals.append("⚠️4板+一字缩量（非总龙头）：能排到往往是开板接盘，"
+                                     "次日需分歧放量回封才可买")
+            else:
+                bayes_prob = min(bayes_prob, max(bayes_prob * 0.75, 0.40))
+                cross_signals.append("⚠️总龙头高位一字：强势但需防开板，开板放量即走")
+
+        # ── 分歧转一致回封奖励：开板1-2次后放量回封，经分歧检验，次日溢价高 ──
+        if 1 <= break_times <= 2 and seal_ratio >= 0.02 and boards <= 5:
+            bayes_prob = min(0.60, bayes_prob * 1.12 + 0.03)
+            cross_signals.append("✅分歧转一致（开板放量回封）：可成交性+次日溢价均优于一字")
+
+        # ── 砸盘系数（市场分歧度）：过高则整体无买点 ──
+        smash = self._get_smash_coefficient(market.get('date'))
+        if smash is not None and smash >= 6.5:
+            bayes_prob = min(bayes_prob, 0.20)
+            cross_signals.append(f"⚠️砸盘系数{smash:.1f}过高：市场分歧过大，无买点（卖点纪律）")
 
         # ── 龙头等级加成（适度，不能覆盖基础概率）──
         dragon_bonus = 0
@@ -1127,14 +1254,25 @@ class EntryCertaintyAnalyzer:
                              stock.get('code', '').startswith('688')) else 0.10
         prev_close = price / (1 + limit_pct) if price > 0 else 0
 
-        # 最强情景：一字/高开秒板
-        strong = {
-            'scenario': '最强',
-            'condition': '竞价高开5%+，9:35前封板',
-            'probability': round(prob * 0.3, 3),
-            'target_price': round(price, 2),
-            'action': '竞价排队/开盘打板',
-        }
+        high_yizi = boards >= 4 and break_times == 0 and _is_yizi(stock)
+
+        # 最强情景：高位一字≠可排板，最强且可介入的情景是"分歧转一致回封"
+        if high_yizi:
+            strong = {
+                'scenario': '最强',
+                'condition': '高开后放量分歧、10:00前回封涨停（分歧转一致）',
+                'probability': round(prob * 0.3, 3),
+                'target_price': round(price, 2),
+                'action': '只在回封瞬间打板/半路，不竞价排队',
+            }
+        else:
+            strong = {
+                'scenario': '最强',
+                'condition': '竞价高开5%+，9:35前封板',
+                'probability': round(prob * 0.3, 3),
+                'target_price': round(price, 2),
+                'action': '竞价排队/开盘打板',
+            }
 
         # 中性情景：换手后封板
         mid = {
@@ -1145,29 +1283,36 @@ class EntryCertaintyAnalyzer:
             'action': '半路介入（涨幅3-6%区间）',
         }
 
-        # 最弱情景：断板/低开
+        # 最弱情景：断板/低开（高位一字开板不回封是最常见亏损形态，权重上修）
         weak_prob = max(0.05, 1 - prob - strong['probability'] - mid['probability'])
+        if high_yizi:
+            weak_prob = max(weak_prob, 0.45)  # 高位一字开板分歧是大概率
         weak = {
             'scenario': '最弱',
-            'condition': '低开/平开，无法封板',
+            'condition': ('高开秒砸/开板后封单持续减弱不回封（一致转分歧）'
+                          if high_yizi else '低开/平开，无法封板'),
             'probability': round(weak_prob, 3),
             'target_price': round(prev_close * 0.97, 2),
-            'action': '不参与/止损离场',
+            'action': '不参与/持仓则按卖点纪律止损离场',
         }
 
         return [strong, mid, weak]
 
     # ─────────── 综合评分 ───────────
 
-    def _composite_score(self, dimensions, stock, dragon_info, market) -> Dict:
+    def _composite_score(self, dimensions, stock, dragon_info, market,
+                         vp_gate: Optional[Dict] = None) -> Dict:
         """
-        综合评分（以贝叶斯次日涨停概率为核心锚点）。
+        综合评分（以贝叶斯次日涨停概率为核心锚点，量价走势为首要闸门）。
 
         设计原则（胜率第一）：
         - next_day_certainty 维度的 bayes_probability 是经过真实数据校准的核心信号，
           直接决定基础分；其他5个维度仅作为 ±15 分的质量调节项。
         - 硬性门槛：bayes 概率 <20% 时最高只能到 C；<30% 最高只能到 B。
-          这保证非贝叶斯维度无法把一只低概率股票"刷"成高等级。
+        - 量价闸门（首要依据）：
+          * vp_gate.grade == 'fail'：等级封顶 C（不给 S+/S/A/B 买点），分数压到 30 以下
+          * vp_gate.grade == 'caution'：等级封顶 B，分数适度下调
+          这保证量价结构恶化的标的无法被其他维度"刷"成高等级。
         """
         dim_map = {
             'theme_strength': dimensions[0],
@@ -1212,6 +1357,19 @@ class EntryCertaintyAnalyzer:
             penalty = 5
 
         final_score = max(0, min(100, base_score + adj - penalty))
+
+        # ── 量价走势闸门（首要依据）：fail/caution 强制压制 ──
+        vp_cap_note = None
+        vp_grade = vp_gate.get('grade') if vp_gate else None
+        if vp_grade == 'fail':
+            # 量价结构一票否决：分数压到28以下，等级封顶C，胜率封顶20%
+            final_score = min(final_score, 28)
+            bayes_p = min(bayes_p, 0.20)
+            vp_cap_note = "量价结构不通过（" + (vp_gate.get('pattern', '量价恶化') or '') + "），不给买点"
+        elif vp_grade == 'caution':
+            final_score = min(final_score, 40)
+            bayes_p = min(bayes_p, 0.26)
+            vp_cap_note = "量价存疑（" + (vp_gate.get('pattern', '') or '') + "），等级封顶B"
 
         # 4) 确定性等级（以校准后贝叶斯概率和综合分双门槛）
         #    S+  : 校准胜率≥45% 且 综合≥50
@@ -1261,12 +1419,20 @@ class EntryCertaintyAnalyzer:
                 'bayes_base': 1.0,
                 'aux_adjustment': '±15',
             },
+            'volume_price_gate': {
+                'grade': vp_grade,
+                'pattern': vp_gate.get('pattern') if vp_gate else None,
+                'score': vp_gate.get('score') if vp_gate else None,
+                'action_gate': vp_gate.get('action_gate') if vp_gate else None,
+                'veto_reasons': vp_gate.get('veto_reasons', []) if vp_gate else [],
+                'cap_note': vp_cap_note,
+            },
         }
 
     # ─────────── 操作指令生成 ───────────
 
     def _generate_operation(self, stock, composite, dragon_info,
-                            market, dimensions) -> Dict:
+                            market, dimensions, vp_gate: Optional[Dict] = None) -> Dict:
         """根据综合评分生成具体操作指令"""
         score = composite['score']
         grade = composite['certainty_grade']
@@ -1280,16 +1446,76 @@ class EntryCertaintyAnalyzer:
         limit_pct = 0.20 if (code.startswith('300') or code.startswith('688')) else 0.10
         prev_close = price / (1 + limit_pct) if price > 0 else 0
 
+        # ── 量价闸门（首要依据）：量价 fail 直接空仓观望，不给任何买点 ──
+        vp_grade = vp_gate.get('grade') if vp_gate else None
+        if vp_grade == 'fail':
+            veto = vp_gate.get('veto_reasons', [])
+            return {
+                'action': 'wait_vp',
+                'action_name': '观望(量价结构不通过)',
+                'timing': '无（量价闸门未放行）',
+                'price_range': '不挂单',
+                'conditions': [f'⛔{v}' for v in veto[:3]] or [
+                    '量价走势恶化（量能/换手/封单配合不合格），首要闸门未通过'],
+                'position_pct': 0.0,
+                'stop_loss': 0,
+                'take_profit_1': 0,
+                'take_profit_2': 0,
+                'prev_close': round(prev_close, 2),
+                'limit_price': round(price, 2),
+                'risk_reward_ratio': 0,
+                'vp_gate_note': '量价一票否决',
+            }
+
+        # 高位一字硬规则（优先于等级判断）：4板+一字不排板，等分歧回封
+        high_yizi = (first_time is not None and first_time <= 575
+                     and break_times == 0 and boards >= 4)
+        is_total_dragon = bool(dragon_info and dragon_info.get('dragon_type') == 'total_dragon')
+        # 分歧转一致回封形态（当日已验证过承接）
+        divergence_resolved = (1 <= break_times <= 2 and seal_ratio >= 0.02)
+
         # 基础决策
-        if grade in ('S+', 'S'):
-            if first_time and first_time <= 575 and break_times == 0 and seal_ratio >= 0.02:
+        if high_yizi and not is_total_dragon:
+            action = 'wait_yizi'
+            action_name = '观望(高位一字，等分歧)'
+            timing = '次日9:30-10:30观察分歧回封'
+            price_desc = '不挂竞价、不排板'
+            conditions = [
+                f'⚠️{boards}板缩量一字：竞价能成交往往是开板接盘，严禁竞价挂单',
+                '次日若高开后放量分歧、10:00前回封涨停（分歧转一致），可打板/半路',
+                f'回封介入参考：涨停价{price:.2f}附近或涨幅6-9%半路',
+                '低开低走/开板不回封=一致转分歧，直接放弃，不抄底',
+            ]
+        elif high_yizi and is_total_dragon:
+            action = 'half_way'
+            action_name = '总龙头谨慎(一字开板分歧再定)'
+            timing = '次日9:30-10:30'
+            price_desc = f'只在分歧放量回封时介入（涨停价{price:.2f}附近）'
+            conditions = [
+                '总龙头可保留观察，但不竞价排板',
+                '开板放量后快速回封（分歧转一致）才可小仓位上',
+                '开板后封单持续减弱=卖点，已持仓则走',
+            ]
+        elif grade in ('S+', 'S'):
+            if divergence_resolved and first_time and first_time <= 600:
                 action = 'board_hit'
-                action_name = '打板'
+                action_name = '打板(分歧转一致回封)'
+                timing = '次日9:30-10:00回封时'
+                price_desc = f'涨停价{price:.2f}（回封确认）'
+                conditions = [
+                    '当日已验证开板回封承接，优先于一字形态',
+                    '次日高开3-7%后放量上攻、回封涨停时打板',
+                    '回封无量或封单持续减少则放弃',
+                    '开盘5分钟内未封板且跌破均价线撤单',
+                ]
+            elif first_time and first_time <= 575 and break_times == 0 and seal_ratio >= 0.02 and boards < 4:
+                action = 'board_hit'
+                action_name = '打板(低位强势)'
                 timing = '次日9:25竞价挂单或9:30-9:35打板'
                 price_desc = f'涨停价{price:.2f}'
                 conditions = [
                     f'竞价高开3%-7%（{prev_close*1.03:.2f}~{prev_close*1.07:.2f}）挂单',
-                    '一字板则排队不撤',
+                    f'{boards}板低位一字可排队，但严格止损，开板放量立即撤',
                     '开盘5分钟内未封板立即撤单',
                 ]
             elif seal_ratio >= 0.01:
@@ -1309,12 +1535,18 @@ class EntryCertaintyAnalyzer:
                 price_desc = f'{prev_close*0.95:.2f}~{prev_close*0.98:.2f}'
                 conditions = ['封板偏弱，等回调确认支撑', '5日均线附近考虑']
         elif grade == 'A':
-            if first_time and first_time <= 600 and break_times <= 1 and seal_ratio >= 0.02:
+            if high_yizi:
+                action = 'wait_yizi'
+                action_name = '观望(高位一字等分歧)'
+                timing = '次日9:30-10:30观察'
+                price_desc = '不挂竞价、不排板'
+                conditions = ['等分歧放量回封再考虑', '开板不回封则放弃']
+            elif first_time and first_time <= 600 and break_times <= 2 and seal_ratio >= 0.02:
                 action = 'half_way'
                 action_name = '半路'
                 timing = '次日9:45-10:30'
                 price_desc = f'{prev_close*1.02:.2f}~{prev_close*1.05:.2f}（涨幅2-5%）'
-                conditions = ['仅半路不打板', '需放量确认', '跌破均价线止损']
+                conditions = ['分歧回封或放量上攻时半路', '需放量确认', '跌破均价线止损']
             else:
                 action = 'low_buy'
                 action_name = '低吸'
@@ -1338,11 +1570,23 @@ class EntryCertaintyAnalyzer:
         position_map = {'S+': 0.15, 'S': 0.10, 'A': 0.05, 'B': 0.02, 'C': 0, 'D': 0}
         position_pct = position_map.get(grade, 0)
 
+        # 量价存疑（caution）：仓位减半（首要闸门收紧）
+        if vp_grade == 'caution':
+            position_pct *= 0.5
+            if not any('量价' in c for c in conditions):
+                conditions.insert(0, f"⚠️量价存疑（{vp_gate.get('pattern','')}）：仓位减半，需放量确认")
+
         # 高板减仓（真实连板5板+胜率骤降）
         if boards >= 6:
             position_pct *= 0.4
         elif boards >= 4:
             position_pct *= 0.7
+
+        # 高位一字（非总龙头）：不排板，仓位清零，只等分歧回封
+        if high_yizi and not is_total_dragon:
+            position_pct = 0.0
+        elif high_yizi and is_total_dragon:
+            position_pct *= 0.3
 
         # 市场极端恶劣强制空仓
         limit_down = market.get('limit_down_count', 0) or 0
@@ -1372,6 +1616,8 @@ class EntryCertaintyAnalyzer:
             'risk_reward_ratio': round(
                 (take_profit_1 - prev_close * 1.03) / max(0.01, prev_close * 1.03 - stop_loss), 2
             ) if prev_close > 0 and action != 'wait' else 0,
+            'vp_pattern': vp_gate.get('pattern') if vp_gate else None,
+            'vp_grade': vp_grade,
         }
 
     # ─────────── 批量分析 ───────────
@@ -1414,6 +1660,20 @@ class EntryCertaintyAnalyzer:
                      f"{analysis['boards']}板 | {analysis['concept']}")
         lines.append(f"   综合确定性: {c['score']}分 [{c['certainty_grade']}] {c['description']}")
         lines.append(f"{'='*60}")
+
+        # 量价走势闸门（首要依据，置顶展示）
+        vp = analysis.get('volume_price')
+        if vp:
+            gate_icon = {'pass': '🟢', 'caution': '🟡', 'fail': '🔴'}.get(vp.get('grade'), '⚪')
+            lines.append(f"{gate_icon} 量价闸门: {vp.get('pattern','')} | "
+                         f"{vp.get('score')}分 | {vp.get('action_gate','')}")
+            for v in vp.get('veto_reasons', [])[:2]:
+                lines.append(f"   ⛔ {v}")
+            for r_ in vp.get('risks', [])[:2]:
+                lines.append(f"   ⚠️ {r_}")
+            for s_ in vp.get('signals', [])[:2]:
+                lines.append(f"   ✅ {s_}")
+            lines.append(f"{'─'*60}")
 
         for key, dim in analysis['dimensions'].items():
             icon = {'theme_strength': '📚', 'positioning': '🎯',
@@ -1484,6 +1744,7 @@ def init_tables(db_path: str = DB_PATH):
             conditions TEXT,
             signals TEXT,
             risks TEXT,
+            dim_detail TEXT,
             created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(date, code)
         );
@@ -1492,11 +1753,16 @@ def init_tables(db_path: str = DB_PATH):
         CREATE INDEX IF NOT EXISTS idx_eca_grade ON entry_certainty_analysis(certainty_grade);
         CREATE INDEX IF NOT EXISTS idx_eca_score ON entry_certainty_analysis(composite_score DESC);
     """)
-    # 兼容旧表：若缺 raw_bayes_probability 列则补上
+    # 兼容旧表：若缺列则补上
     cols = {r[1] for r in conn.execute("PRAGMA table_info(entry_certainty_analysis)").fetchall()}
     if 'raw_bayes_probability' not in cols:
         try:
             conn.execute("ALTER TABLE entry_certainty_analysis ADD COLUMN raw_bayes_probability REAL")
+        except Exception:
+            pass
+    if 'dim_detail' not in cols:
+        try:
+            conn.execute("ALTER TABLE entry_certainty_analysis ADD COLUMN dim_detail TEXT")
         except Exception:
             pass
     conn.commit()
@@ -1521,14 +1787,45 @@ def save_analysis(date: str, analyses: List[Dict], db_path: str = DB_PATH):
             all_signals.extend(d.get('signals', []))
             all_risks.extend(d.get('risks', []))
 
+        # 五大维度详情（题材强弱/卡位/换手/竞价/次日推演）+ 封板质量，
+        # 供前端"深度分析"展开；封板质量作为换手/竞价的交叉参考一并保留
+        def _dim_brief(key):
+            d = dims.get(key, {})
+            return {
+                'score': d.get('score'),
+                'grade': d.get('grade'),
+                'signals': d.get('signals', [])[:4],
+                'risks': d.get('risks', [])[:4],
+                'details': d.get('details', {}),
+            }
+        dim_detail = {
+            'theme': _dim_brief('theme_strength'),
+            'position': _dim_brief('positioning'),
+            'turnover': _dim_brief('turnover_structure'),
+            'seal': _dim_brief('seal_quality'),
+            'auction': _dim_brief('auction_proxy'),
+            'nextday': _dim_brief('next_day_certainty'),
+        }
+        vp = a.get('volume_price')
+        if vp:
+            dim_detail['volume_price'] = {
+                'grade': vp.get('grade'),
+                'score': vp.get('score'),
+                'pattern': vp.get('pattern'),
+                'action_gate': vp.get('action_gate'),
+                'signals': vp.get('signals', [])[:3],
+                'risks': vp.get('risks', [])[:3],
+                'veto_reasons': vp.get('veto_reasons', [])[:3],
+            }
+
         conn.execute("""
             INSERT OR REPLACE INTO entry_certainty_analysis
             (date, code, name, concept, boards, composite_score, certainty_grade,
              theme_score, positioning_score, turnover_score, seal_quality_score,
              auction_score, next_day_score, bayes_probability, raw_bayes_probability,
              action, action_name, position_pct, stop_loss, take_profit_1, take_profit_2,
-             conditions, signals, risks)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             conditions, signals, risks, dim_detail)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             date, a['code'], a['name'], a.get('concept', ''), a['boards'],
             c['score'], c['certainty_grade'],
@@ -1542,6 +1839,7 @@ def save_analysis(date: str, analyses: List[Dict], db_path: str = DB_PATH):
             json.dumps(op['conditions'], ensure_ascii=False),
             json.dumps(all_signals, ensure_ascii=False),
             json.dumps(all_risks, ensure_ascii=False),
+            json.dumps(dim_detail, ensure_ascii=False),
         ))
     conn.commit()
     conn.close()

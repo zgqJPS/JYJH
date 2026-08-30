@@ -1,0 +1,661 @@
+=== 目录文件清单 ===
+生成时间: 2026-08-30 07:20:56.208184
+根目录: C:\Users\15624\Desktop\软件\花花\采集\20zgqJPS-stock-platform-8.26jupan3
+
+--- Python 文件 (54) ---
+      2946  2026-08-30 06:31  _diag.py
+      1522  2026-08-30 05:53  _syntax_check.py
+     84185  2026-08-30 06:51  app.py
+     21537  2026-08-04 13:30  backtester.py
+     12414  2026-08-25 20:43  board_calculator.py
+     54057  2026-08-25 05:11  capital_flow_analyzer.py
+      2764  2026-08-19 22:43  clear_today.py
+      2488  2026-08-04 13:07  config.py
+     19084  2026-08-04 13:29  cycle_model.py
+      6568  2026-08-04 13:08  data_fetcher.py
+     23429  2026-08-04 13:07  db.py
+      4797  2026-08-07 14:59  diagnose_db.py
+     67051  2026-08-25 05:11  dragon_detector.py
+     79826  2026-08-30 07:16  entry_certainty_analyzer.py
+     25277  2026-08-04 13:23  exit_strategy.py
+     15543  2026-08-07 15:56  feature_engineering.py
+      8160  2026-08-07 15:20  fetch_dragon_tiger.py
+     21366  2026-08-07 15:19  fetch_xgb_detailed.py
+       577  2026-08-25 20:38  fix_shengda.py
+      9977  2026-07-30 08:50  knowledge_base.py
+     30727  2026-08-04 13:19  live_tracker.py
+     27911  2026-08-30 07:01  main.py
+     19007  2026-08-25 06:19  market_analyzer.py
+     31689  2026-08-30 06:47  notification_scheduler.py
+     47974  2026-08-25 05:11  operation_planner.py
+     16382  2026-08-11 14:09  pattern_recognizer.py
+     14887  2026-07-30 08:50  prediction_tracker.py
+     46231  2026-08-11 14:10  predictor.py
+     22032  2026-08-06 13:43  quant_strategy.py
+     20162  2026-08-25 07:29  realtime_fetcher.py
+     22754  2026-08-04 16:31  reporter.py
+        33  2026-07-30 08:50  requirements.py
+     16465  2026-07-30 08:50  self_corrector.py
+     36484  2026-08-04 13:22  self_upgrader.py
+     51911  2026-08-18 05:31  shujuku\capital_flow_analyzer.py
+       779  2026-08-07 16:05  shujuku\config.py
+      2681  2026-08-07 16:09  shujuku\db.py
+     56064  2026-08-18 05:31  shujuku\dragon_detector.py
+     10141  2026-08-07 16:07  shujuku\feature_engineering.py
+     15883  2026-08-07 16:55  shujuku\fetch_xgb_by_date_selenium.py
+     16567  2026-08-07 16:06  shujuku\fetch_xgb_detailed.py
+     20209  2026-08-18 05:31  shujuku\main.py
+      2340  2026-08-07 16:10  shujuku\smash_coefficient.py
+       559  2026-08-07 16:52  shujuku\test_selenium.py
+      4716  2026-08-07 16:07  shujuku\train_ai_model.py
+     15061  2026-08-04 13:27  simulator.py
+     85279  2026-08-30 06:43  smart_recommender.py
+     13026  2026-08-25 06:43  smash_coefficient.py
+     22311  2026-08-04 13:27  strategy_tracker.py
+      6414  2026-08-06 13:45  trading_executor.py
+     10870  2026-08-07 15:54  train_ai_model.py
+     34294  2026-08-25 05:39  turning_point_detector.py
+      2197  2026-08-07 15:30  upgrade_db_columns.py
+     27568  2026-08-30 07:15  volume_price_analyzer.py
+
+--- 数据文件 (15) ---
+        43  2026-07-30 08:50  knowledge\corrections.json
+      1398  2026-08-29 00:30  knowledge\model_weights.json
+     61136  2026-08-29 00:30  knowledge\patterns.json
+     29064  2026-07-30 09:43  knowledge\patterns_v2.json
+        43  2026-07-30 08:50  knowledge\predictions.json
+       309  2026-08-07 15:05  models\feature_importance.csv
+       573  2026-08-07 15:58  models\feature_importance_v2.csv
+    606208  2026-08-07 17:00  shujuku\xgb.db
+  15986688  2026-08-19 06:52  stock_data.db
+  15613952  2026-08-25 06:58  stock_data_1784791326780_0_09ym -0822.db
+  15831040  2026-08-29 00:44  stock_data_1784791326780_0_09ym.db
+  15654912  2026-08-27 06:22  stock_data_1784791326780_0_09ym0825.db
+  15736832  2026-08-28 06:04  stock_data_1784791326780_0_09ym0828.db
+  15831040  2026-08-29 00:09  stock_data_1784791326780_0_09ym0829.db
+      5531  2026-07-30 11:31  xgt_import_report.json
+
+--- 临时/备份/可疑文件 (5) ---
+      2946  2026-08-30 06:31  _diag.py
+         0  2026-08-30 07:20  _diag_result.txt
+      1522  2026-08-30 05:53  _syntax_check.py
+  15462400  2026-08-19 22:37  stock_data_1784791326780_0_09ym - 副本 (2).db
+  10108928  2026-08-07 14:29  stock_data_1784791326780_0_09ym - 副本.db
+
+--- 缓存文件 pyc/__pycache__ (44) ---
+     10770  2026-08-25 20:44  __pycache__\board_calculator.cpython-310.pyc
+     36343  2026-08-25 05:23  __pycache__\capital_flow_analyzer.cpython-310.pyc
+     52437  2026-08-18 05:34  __pycache__\capital_flow_analyzer.cpython-313.pyc
+      2036  2026-08-04 16:52  __pycache__\config.cpython-310.pyc
+     11882  2026-08-04 16:52  __pycache__\cycle_model.cpython-310.pyc
+      5661  2026-08-04 16:52  __pycache__\data_fetcher.cpython-310.pyc
+     21593  2026-08-04 16:52  __pycache__\db.cpython-310.pyc
+     27527  2026-08-18 05:37  __pycache__\db.cpython-313.pyc
+     49143  2026-08-25 05:23  __pycache__\dragon_detector.cpython-310.pyc
+     64971  2026-08-18 05:34  __pycache__\dragon_detector.cpython-313.pyc
+     47258  2026-08-29 00:29  __pycache__\entry_certainty_analyzer.cpython-310.pyc
+     17409  2026-08-04 16:52  __pycache__\exit_strategy.cpython-310.pyc
+      8420  2026-08-04 16:52  __pycache__\knowledge_base.cpython-310.pyc
+     13432  2026-08-18 05:33  __pycache__\knowledge_base.cpython-313.pyc
+     23376  2026-08-04 16:52  __pycache__\live_tracker.cpython-310.pyc
+     18486  2026-08-25 07:52  __pycache__\main.cpython-310.pyc
+     25336  2026-08-18 05:34  __pycache__\main.cpython-313.pyc
+     15595  2026-08-25 06:19  __pycache__\market_analyzer.cpython-310.pyc
+     29550  2026-08-25 05:23  __pycache__\operation_planner.cpython-310.pyc
+     45505  2026-08-18 05:34  __pycache__\operation_planner.cpython-313.pyc
+     13322  2026-08-11 14:17  __pycache__\pattern_recognizer.cpython-310.pyc
+     20529  2026-08-18 05:35  __pycache__\pattern_recognizer.cpython-313.pyc
+     10487  2026-08-04 16:52  __pycache__\prediction_tracker.cpython-310.pyc
+     15339  2026-08-18 05:35  __pycache__\prediction_tracker.cpython-313.pyc
+     30573  2026-08-11 14:17  __pycache__\predictor.cpython-310.pyc
+     50292  2026-08-18 05:35  __pycache__\predictor.cpython-313.pyc
+     15440  2026-08-06 14:06  __pycache__\quant_strategy.cpython-310.pyc
+     14305  2026-08-25 07:58  __pycache__\realtime_fetcher.cpython-310.pyc
+     16023  2026-08-04 16:52  __pycache__\reporter.cpython-310.pyc
+     30532  2026-08-18 05:35  __pycache__\reporter.cpython-313.pyc
+     10648  2026-08-04 16:52  __pycache__\self_corrector.cpython-310.pyc
+     16584  2026-08-18 05:35  __pycache__\self_corrector.cpython-313.pyc
+     25891  2026-08-04 16:52  __pycache__\self_upgrader.cpython-310.pyc
+     43980  2026-08-18 05:35  __pycache__\self_upgrader.cpython-313.pyc
+     12076  2026-08-04 16:52  __pycache__\simulator.cpython-310.pyc
+     52385  2026-08-29 00:29  __pycache__\smart_recommender.cpython-310.pyc
+     73792  2026-08-18 05:35  __pycache__\smart_recommender.cpython-313.pyc
+     10418  2026-08-25 06:45  __pycache__\smash_coefficient.cpython-310.pyc
+     14342  2026-08-18 05:35  __pycache__\smash_coefficient.cpython-313.pyc
+     25178  2026-08-25 05:40  __pycache__\turning_point_detector.cpython-310.pyc
+     13432  2026-08-18 05:33  knowledge\knowledge_base.cpython-313.pyc
+       831  2026-08-07 16:08  shujuku\__pycache__\config.cpython-310.pyc
+      3368  2026-08-07 16:11  shujuku\__pycache__\db.cpython-310.pyc
+      2523  2026-08-07 16:11  shujuku\__pycache__\smash_coefficient.cpython-310.pyc
+
+--- 其他文件 (467) ---
+       127  2026-08-04 17:10  .git\COMMIT_EDITMSG
+        90  2026-08-04 15:00  .git\FETCH_HEAD
+        21  2026-07-31 16:46  .git\HEAD
+        41  2026-08-04 15:10  .git\ORIG_HEAD
+       293  2026-07-31 16:47  .git\config
+        73  2026-07-31 16:39  .git\description
+       478  2026-07-31 16:39  .git\hooks\applypatch-msg.sample
+       896  2026-07-31 16:39  .git\hooks\commit-msg.sample
+      4726  2026-07-31 16:39  .git\hooks\fsmonitor-watchman.sample
+       189  2026-07-31 16:39  .git\hooks\post-update.sample
+       424  2026-07-31 16:39  .git\hooks\pre-applypatch.sample
+      1649  2026-07-31 16:39  .git\hooks\pre-commit.sample
+       416  2026-07-31 16:39  .git\hooks\pre-merge-commit.sample
+      1374  2026-07-31 16:39  .git\hooks\pre-push.sample
+      4898  2026-07-31 16:39  .git\hooks\pre-rebase.sample
+       544  2026-07-31 16:39  .git\hooks\pre-receive.sample
+      1492  2026-07-31 16:39  .git\hooks\prepare-commit-msg.sample
+      2783  2026-07-31 16:39  .git\hooks\push-to-checkout.sample
+      2308  2026-07-31 16:39  .git\hooks\sendemail-validate.sample
+      3650  2026-07-31 16:39  .git\hooks\update.sample
+      5079  2026-08-04 17:10  .git\index
+       240  2026-07-31 16:39  .git\info\exclude
+      2514  2026-08-04 17:10  .git\logs\HEAD
+      2189  2026-08-04 17:10  .git\logs\refs\heads\main
+       132  2026-08-04 14:57  .git\logs\refs\remotes\origin\HEAD
+      1273  2026-08-04 17:10  .git\logs\refs\remotes\origin\main
+      6226  2026-08-04 15:00  .git\objects\01\4595a85dbc8d1171a6fa0cd0b0d9a37fa1e01e
+      5756  2026-07-31 16:40  .git\objects\01\e7dd30873dfb892172f62d02b222a5860a13a8
+       814  2026-08-04 14:57  .git\objects\02\5a370e833e25b33daba31b06ea573a90d06bb3
+      6139  2026-08-04 15:00  .git\objects\02\83574e293b0eecf29b9ba18ca3d7bc02394517
+     64194  2026-07-31 16:40  .git\objects\03\3c32c3559b3d8537408f23c80df151246218eb
+     17118  2026-08-04 15:08  .git\objects\03\d666c304aa555363e4e08e2cca6ba8c65f44a8
+      2761  2026-07-31 16:40  .git\objects\05\2e19d0d3208fbf1733c0fbbf2840f838de5fc7
+      7006  2026-07-31 16:40  .git\objects\05\4f66f7ad15f83c2eb3d8f0828427475b242a9e
+     12526  2026-08-04 15:08  .git\objects\06\128ec2be0f647d3c2f9c68daca679a0508a1b4
+      2635  2026-07-31 16:40  .git\objects\06\7dd2daf387663f92137068c12cd4f9626f02a7
+     13526  2026-08-04 16:45  .git\objects\06\a6cfab573fff69cc59b0a0e060f62bc0933e83
+      2165  2026-07-31 16:40  .git\objects\06\a79370ad04d5fa6aecea3a853a5b06108610fb
+      2391  2026-07-31 17:24  .git\objects\07\f0939ea0212c20ec272283f6107b4d1a0dae34
+      2237  2026-07-31 16:40  .git\objects\08\3e17f4a0d6454017952718af39e649db8487bd
+      3609  2026-08-04 14:58  .git\objects\08\6cbb2bea07666e3e666b8c40ff34d05fb8ec4d
+     11140  2026-08-04 15:08  .git\objects\08\91e54e89673c2d0cb3e3ae2bd4bb50bf2428e3
+     69159  2026-07-31 16:40  .git\objects\08\fec5536ec34e50b40ee2befedc0bcdd92425b1
+      2666  2026-08-04 14:58  .git\objects\0a\836c271a204f160224eeae0354a3f9f1aeeba8
+      3859  2026-07-31 16:40  .git\objects\0b\5606e40b94300a6e9a48440173b9bc8e98e603
+      7728  2026-07-31 16:40  .git\objects\0d\038441d19e508e3bc7d0fe0fcc4bc27efa57ae
+       816  2026-08-04 14:57  .git\objects\0f\4a7aacc24ec99ae80e9cb224094a3a3f34c909
+    100244  2026-07-31 16:40  .git\objects\10\47fded72591bbb550a81c79391f18bcc86a9db
+       821  2026-08-04 14:57  .git\objects\10\60d8bed7becb519d91369fc44214139070177d
+     65673  2026-07-31 16:40  .git\objects\10\8574a66adf2eb83466d91fbd416bee1f1c1128
+       192  2026-07-31 16:40  .git\objects\12\3834a641dab060b5071b6ff98907e6e7499486
+      4176  2026-08-04 14:58  .git\objects\12\5b11b0a0561dd75cadb1e845d20fd17c74585e
+        50  2026-08-04 15:07  .git\objects\12\829c01a33a63f07077d85ce9d9be3692ae3f3b
+      2163  2026-08-04 14:57  .git\objects\12\f25d6130899c8c85e7dcfa81718755060404ca
+      3902  2026-08-04 14:57  .git\objects\13\0eab36a53fadb3e7b2241baad97f6ea19843a5
+     12545  2026-07-31 16:40  .git\objects\14\c07b6060cde6869d0f0b7147832e65a24aa754
+      4776  2026-07-31 16:40  .git\objects\15\264593738f57bec710cc9609a98feb05917a5a
+       283  2026-08-04 14:57  .git\objects\15\844d54af322c9e672b9108fbfce1e23e4770fd
+      8938  2026-07-31 16:40  .git\objects\16\cae0f469ec5db0b758e0ed5845ea177cac538a
+      3967  2026-08-04 14:57  .git\objects\16\cbf8de736c492783ab160079eb5edaddaeb6ae
+      6064  2026-07-31 16:40  .git\objects\16\f23a3b71df192e2ae5637eceac2494957fe548
+       344  2026-08-04 15:20  .git\objects\17\429d7c8dacf763c16ed8320ec970815eb63ec9
+       234  2026-07-31 17:36  .git\objects\17\68b80250e4c501ab88047e53fe16c9caceb645
+      2139  2026-07-31 17:24  .git\objects\18\1aaed21e87bd2a3f0c42177d65ab9d15cb1c09
+      2179  2026-08-04 14:57  .git\objects\18\5e8b24703a769ab349fd8586dd98b31dd55d80
+      6183  2026-08-04 14:57  .git\objects\18\a19db881b869eb0d8cc4b98285ba1a6e302281
+      8623  2026-07-31 16:40  .git\objects\18\cfe5f9a35f15d519b37fc5fb858eab16110ade
+      2553  2026-07-31 16:40  .git\objects\19\3aeabde848030d5f7d45d33175529a67ff97f0
+      5247  2026-08-04 15:00  .git\objects\19\6d5c6ff1fef482a353cd31a67c4d5ea1173c57
+      6894  2026-08-04 14:58  .git\objects\19\7a04412772953f32b545a62a6bc29b844e9132
+       165  2026-07-31 16:40  .git\objects\1a\776fbf7f0c7fea3e58619370113063cb2b697c
+      5771  2026-08-04 14:57  .git\objects\1a\83d7e2bf888d581c326f824db8e82d79ddae5e
+     33758  2026-07-31 16:40  .git\objects\1a\b7df15c3b230249141344c3d3d76b4741cebbd
+     11017  2026-07-31 16:40  .git\objects\1b\44803c6c43582fd28983c8dc24393597329098
+      2321  2026-08-04 15:11  .git\objects\1b\73883512b8c18450b72e3c478fa4ce62c8b751
+      6367  2026-08-04 15:08  .git\objects\1d\ddf95b7794dd5d8a6fa9b100cf11bf1b04070c
+     49116  2026-07-31 16:40  .git\objects\1e\94f74e1a4ea34f93c684674ff3dfa9d32ddc17
+     59546  2026-07-31 16:40  .git\objects\1f\2a21826a0a82c15f53d2884c5ec08b3cfaed31
+      5190  2026-08-04 15:00  .git\objects\1f\e1c888c8cd4556fbb3e6012adaf7c995080089
+       396  2026-08-04 15:20  .git\objects\1f\f0f942758490245d9c6449b75a48634bd54e93
+       232  2026-08-04 15:01  .git\objects\20\c3e9dbb05707d7bf64ccd90b34d666611514bd
+      8668  2026-08-04 15:08  .git\objects\20\dbd26a4bb21b82bb15e8b905fb8a7e01d48275
+      4583  2026-08-04 16:45  .git\objects\21\0a375cc3408c3d5d5158a8f2e11217285de51a
+      4140  2026-07-31 16:40  .git\objects\22\b019c31093cf38721748ebcbad202fe1f8504a
+      2201  2026-08-04 14:57  .git\objects\23\2bf48187a5fe269d7da573aa701d87989836da
+      1140  2026-07-31 16:40  .git\objects\23\da8a7255118768e1bced0dc6e6a77253106f2b
+      5771  2026-07-31 16:40  .git\objects\24\90526ec51179a1da885db07704641930211d37
+     15756  2026-08-04 15:08  .git\objects\25\9c32b5ce9f1c14ba47077c1fcd7914bc23a3c0
+      4932  2026-08-04 15:01  .git\objects\27\0f8f0fbe2abfcb686f8aa2a59b8a53b949f668
+       817  2026-08-04 14:57  .git\objects\27\c9fbd9271d2d0a44bf48cd8ab38bb8248eefbd
+      7397  2026-07-31 16:40  .git\objects\28\db93a77a3468b56f2f5bab4bbf5d678fd71570
+       871  2026-07-31 16:42  .git\objects\29\8f8f48c8af93c8b056dd09a6d4de93d69e848c
+      2193  2026-07-31 16:40  .git\objects\29\a8cc4f7ce6713238514a1bba0f2c0c4c5a8822
+      7786  2026-07-31 16:40  .git\objects\29\cdf140ef4bbf3909c41815a6c3a9016326d9b5
+     17998  2026-07-31 16:40  .git\objects\2b\274d231d8c963b9c82192a67c1dbedcda48fa5
+     15398  2026-08-04 14:58  .git\objects\2d\709594512a786ec3b7985d26d4f761c6315fd1
+      5790  2026-07-31 16:40  .git\objects\2d\91012b3b990ef56d426f33ca96cc53ff05223a
+       819  2026-08-04 14:57  .git\objects\2d\d06880dc0839ae455e7c23bc979fce07f60b34
+     13429  2026-08-04 17:08  .git\objects\2e\af8f007067ef754dc2444f031f978df835663d
+     14565  2026-08-04 14:57  .git\objects\2f\8b11654bfe387189c7ca04e17321fc5d948622
+        29  2026-07-31 16:40  .git\objects\2f\ef004c58284b3cbe25966304a0787fe9167e55
+      4676  2026-07-31 16:40  .git\objects\2f\fca39acf1bed8f979b49e3d8a2934f0c13a3dd
+      7887  2026-07-31 16:40  .git\objects\30\82096e9e8dda81945b87ee48227c02d8ca89ba
+      7968  2026-07-31 16:40  .git\objects\30\fc1c692f5cf05187d83e18e0582237621780ab
+      1816  2026-07-31 16:40  .git\objects\31\0e59dd2251c433d88e36e1a90a9fdf7395368b
+      9009  2026-08-04 15:08  .git\objects\31\e95251d3e87efe931dbbd75a473b5e0c26275d
+       819  2026-08-04 14:57  .git\objects\31\ee3cf65f6fd1820e77902e0252ec983f39d2ff
+       103  2026-07-31 16:40  .git\objects\31\f025d0c53abe35506e394ba5e5c33051583701
+      3113  2026-08-04 15:08  .git\objects\33\9be9ce09aac1833f58fe4a43677bc9d399fab0
+      1958  2026-07-31 16:40  .git\objects\34\601da92cf1f9770693ca2a6d4a90712f41485e
+      4693  2026-07-31 16:40  .git\objects\34\6cdfd59fde38ef900fd807b9a6546b5f00efdb
+      8519  2026-08-04 15:08  .git\objects\34\965bd048e91c13e0b85645aaa20da479719352
+      1292  2026-08-04 15:07  .git\objects\35\36a81128521403773ef4678e7395dbfddfc352
+      6541  2026-07-31 16:40  .git\objects\35\d14124ae33413c946c0b772f0f296d340663c3
+       818  2026-08-04 14:57  .git\objects\35\ddf0602b7a59c1b96d15d23bb3ea446b4cbedf
+      5748  2026-08-04 15:11  .git\objects\35\efcdcafe93a00aea3a790d519e6aeef750cf46
+      6184  2026-07-31 16:40  .git\objects\36\3550e7fbb2b653ff1770a34f39d4a8b5e98843
+    223837  2026-07-31 16:40  .git\objects\36\eb9a69d6e47608a4984e0675c501d533eee95c
+      6053  2026-08-04 15:08  .git\objects\37\4722c991c29afe00ae302c5452261446dcb048
+     17485  2026-07-31 16:40  .git\objects\37\58b837724fb3ab83961999cffd2c62246bab65
+      4126  2026-08-04 15:01  .git\objects\37\780e38e2de810595be5b434ca3054db561fad6
+    113086  2026-07-31 16:40  .git\objects\38\3b74a25b16ded006ab3c27ce36c90368668c79
+    112105  2026-07-31 16:40  .git\objects\38\489c4aac1403beb95156b68c6b2c4c62435997
+      3567  2026-07-31 16:40  .git\objects\38\a06fb3287ece820d522c91fc01d4ceed0e934f
+       244  2026-08-04 14:56  .git\objects\3a\6a768c5d801f237b2025c0695b97e1cbb26728
+     14451  2026-08-04 14:57  .git\objects\3b\c21c40bf0dd0354fe0bb264705715c7df6f422
+      3490  2026-07-31 16:40  .git\objects\3c\2dfa4ea856aacc51ed03abbfa533eede5a528d
+       629  2026-07-31 16:40  .git\objects\3c\54075031ccda88a1b5d9699f909c49c9db447d
+       820  2026-08-04 14:57  .git\objects\3c\99f21dfcbd5db6a02c88a982fc0c8c1efa62cc
+      2346  2026-07-31 16:40  .git\objects\3d\06f3cfa065bb111d76d97ff55f99b41a4fffa5
+      9378  2026-08-04 15:08  .git\objects\3d\2b4bcb54ca7045f897eeca8bbf812cc25c3efa
+      2643  2026-07-31 16:40  .git\objects\41\60a64fd541296d068f9e8325fa8d8983eb52e5
+      4735  2026-08-04 15:11  .git\objects\41\b2ca9c6e31fff038e3921aef15bdff829a3a3d
+      4933  2026-07-31 16:40  .git\objects\43\3c66dd2a57bcecc63680eb4b3828a86224a357
+      2156  2026-07-31 16:40  .git\objects\43\42e30040c8bb9675bfab6886302ea4ee96976a
+      5701  2026-07-31 16:40  .git\objects\43\ed6c3df0775a739904f8720c7176e3bdff98b2
+       199  2026-07-31 16:42  .git\objects\44\88cf243d8e5656acdb92fcf7a126d89ba794df
+        55  2026-07-31 16:40  .git\objects\44\a40038b80744c33b4c4c5af25d114dd8fa8d2c
+      5182  2026-07-31 16:40  .git\objects\44\a818e5424dd52d685d64cc63d4fd24563b1112
+    114738  2026-07-31 16:40  .git\objects\44\e9185413dec239ced32b54f46a1c4d3beb2d04
+     13576  2026-08-04 14:57  .git\objects\45\a117dc63441fbf134b5040862548249ae23dec
+      2141  2026-08-04 14:57  .git\objects\45\a492868b91f8861b543481e1afc8d1aa1c3469
+      4504  2026-07-31 16:40  .git\objects\45\ac5759d5edcbc31c3ba9306e489b5d3526bf1e
+    112805  2026-07-31 16:40  .git\objects\46\37cae728829227fa3acf20f263ce437fff1d82
+       188  2026-08-04 15:11  .git\objects\47\3559a200e551116ed4091eb8cf9aceabf9c602
+       192  2026-08-04 15:20  .git\objects\47\a1dc38f79d9ce65efb307d6b2d055d5a0f6e92
+      2559  2026-07-31 16:40  .git\objects\47\e31b72249662bfc31eeadbe921c315e2f0c3cb
+      6740  2026-07-31 16:40  .git\objects\48\9f5e9c3506ce6aead749be623e5de3f5697766
+   2977227  2026-08-04 15:08  .git\objects\48\aa9cd3ee5e00601ae93836822a0093250e0327
+      1800  2026-07-31 16:40  .git\objects\49\d701bcf5ac49785e31625e67d272a5a5879001
+      6263  2026-07-31 16:40  .git\objects\4a\7d595cad1257a3769bcfd1f54eea496ae6949f
+    114738  2026-07-31 16:40  .git\objects\4a\9fec279d18151f3464755b965553112639ed31
+     65428  2026-07-31 16:40  .git\objects\4a\e0cc6eb73e1b346cdefdc5ff01839189e9cea9
+       393  2026-07-31 16:40  .git\objects\4c\6673843534b5296f294d80928db39b149584e0
+     12214  2026-08-04 16:45  .git\objects\4c\b6611738b76e70fbcbc9ed56603b4d94623cb1
+      2668  2026-07-31 16:40  .git\objects\4c\ee7226f2d79e4361804e7a37f6a78d33900b9a
+      2633  2026-07-31 16:40  .git\objects\4d\788e3b830fe330e1c21df04c483d6f50eac9a7
+      3124  2026-07-31 16:40  .git\objects\4e\65dab300ccf8a02bdd68c843570f92aa011fca
+      6005  2026-07-31 16:40  .git\objects\4e\d2c93a3ac089ce78fc69f220edfcbf0815eb89
+      1244  2026-08-04 16:46  .git\objects\4f\be0c2bda31bdd492fcc17d5fe656338434dfa9
+     13047  2026-08-04 14:57  .git\objects\50\828118aee9783971a11da292108ad6149e5ebc
+     34617  2026-07-31 16:40  .git\objects\50\ff3ee5fbea6275fe6f10ad11704dfa4d37444f
+       349  2026-08-04 17:08  .git\objects\51\bc0328ed7c0f0640218b722a2f9f6b54d111c9
+    113145  2026-07-31 16:40  .git\objects\51\d79c731c7a0f02f4dfcb216e23e1e990c4cdee
+      3532  2026-07-31 16:40  .git\objects\52\16608f67108f73a123026131b71083d1391fa0
+      5548  2026-08-04 15:08  .git\objects\52\36039f1ba0b37370b3ea4ae57b34fc01351512
+      2476  2026-07-31 16:40  .git\objects\52\781010d20cbaef995938adeba7ce07c2ccadbb
+      7133  2026-08-04 15:08  .git\objects\52\af316fb9ff0a952c0c553dff640dfd0540e061
+      2592  2026-08-04 15:20  .git\objects\52\cc607023260de28b3c37728d0c1754be82de8d
+      5845  2026-08-04 14:57  .git\objects\54\77059d6d242b234a5ea46afcd53976328495f9
+     69647  2026-07-31 16:40  .git\objects\56\4b7a2d4335c60a3ad54b46fc03f2c92291f49a
+      1142  2026-08-04 15:11  .git\objects\57\99d0e73bfc0e513e256e0f2ef60e7d89064e42
+     14439  2026-08-04 14:57  .git\objects\58\319eb44c346e8a8bd20a9dc4e97167399f6d8c
+      6672  2026-08-04 14:58  .git\objects\58\4f05fda7bec44da7a9c83c3b7a5f4ae8b8db19
+      6871  2026-07-31 16:40  .git\objects\58\c471da73b407e911df94c91c96ff93a3cd2079
+      4890  2026-07-31 16:40  .git\objects\59\4ead71972c3332d0b11c1698d28c0fa5c383b2
+       815  2026-08-04 14:57  .git\objects\59\529027b6fb8434969035aed07217956bf7b0fc
+     10212  2026-07-31 16:40  .git\objects\5a\2827a6e0198c620a3cd657d0781c17e0b64fe6
+      1919  2026-07-31 16:40  .git\objects\5c\5b6578ab0325a0b576e8c8b0cceb634f0670f7
+      3495  2026-07-31 16:40  .git\objects\5d\d81c294fab1fb1af12c863fbbf80ec796ea3da
+      4385  2026-07-31 16:40  .git\objects\5f\a5bca7cbd4480a19d4fa01206d31a7a54870f3
+     15644  2026-07-31 16:40  .git\objects\60\0d70234178540a132a367819d30abc05dc7a78
+      6761  2026-08-04 15:11  .git\objects\60\e4eb561f640f1618b86b8f953d720119cde6ab
+       102  2026-08-04 15:20  .git\objects\61\11810462f2cd2b9e2e1fe4ddde9224c04b88d9
+     94267  2026-07-31 16:40  .git\objects\61\8cf8f5cebb01ccdf8e0cdde7965028399fcb89
+        56  2026-08-04 15:08  .git\objects\61\95c46b18b58dcc438da04729ed68f8cc60c769
+      2901  2026-07-31 16:40  .git\objects\65\e7933b6b2e49e8de5f607a1da11a3815b2e74a
+       274  2026-07-31 16:40  .git\objects\66\893cff4ee04d05d967f5b5199ca2677899332f
+    113100  2026-07-31 16:40  .git\objects\66\8c8f620e27c1423cd78a67aa1b88284c393d21
+      6432  2026-07-31 16:40  .git\objects\66\b3c90df97f4583acaf130d105367ff2bf7f180
+     91455  2026-07-31 16:40  .git\objects\66\d39fc95c877b6d1fb0d41bf6b7103b87b96b51
+       818  2026-08-04 14:57  .git\objects\66\f7dcca694f20379c29007218da9a21965ae121
+      3490  2026-07-31 16:40  .git\objects\67\9749a5aa5a8471abec7ab9f4d667db4a699fc7
+      4438  2026-07-31 16:40  .git\objects\67\ace02e2547cc0dbe7e16fda1aa195160c2888f
+      7197  2026-07-31 16:40  .git\objects\67\e1edeff1c79a33b769ba5a322d16731fb02d1c
+      6795  2026-07-31 16:40  .git\objects\67\f88296a2eef61c3d5ba2ad77d35b0a525084ac
+  10008979  2026-07-31 16:40  .git\objects\68\586844d987b714c47f2ef67588ce045419c01d
+      3340  2026-08-04 14:58  .git\objects\68\980c697d5781327b4c695961c6f4ef13091167
+      5287  2026-07-31 16:40  .git\objects\6b\8a147936d286fc5486bd90359db7cb62456439
+      6803  2026-07-31 16:40  .git\objects\6b\948f26f27b61b5ad695103318f3280b50235ac
+      2140  2026-08-04 14:57  .git\objects\6c\4d603318531edbfed4954f4712f40e9877d180
+     12570  2026-07-31 16:40  .git\objects\6c\4dc31ccf3619256fa7b50385d2a9226bd591e1
+     12048  2026-08-04 15:11  .git\objects\6e\283d828dd3cf94ba638ec8454fe42894cab5a1
+      2865  2026-07-31 16:40  .git\objects\6e\f2164503396d90a7a956e333919f4e26478b2b
+       320  2026-07-31 16:40  .git\objects\71\6a7083af05b4d7129dd6c8dac4fcb221326482
+      4775  2026-08-04 15:01  .git\objects\72\deecd85d8b191429ba64f32bbf80fd863c302b
+     20129  2026-07-31 16:40  .git\objects\73\31ac128decff44b7f113aceb03525fd1ae483c
+       244  2026-08-04 16:46  .git\objects\73\6ceaeedba193069f9684a9e72768ffa5954bff
+      2162  2026-08-04 14:57  .git\objects\74\a33d8137d35fcf86e75511880b57e627cd689a
+      1916  2026-08-04 14:57  .git\objects\75\0e56f770ec534d5b2dc10694f091360440f9fa
+      4990  2026-07-31 16:40  .git\objects\75\6df785d3d9d2e0f4452b286ba2b19c548bf1f3
+     65644  2026-07-31 16:40  .git\objects\75\b598c105d50bceda4e5a3028ad02be2541afe9
+      6038  2026-08-04 14:58  .git\objects\75\c765fc71e7d598ee9edc3895b3708f694ff6c8
+       405  2026-07-31 16:40  .git\objects\76\73d9200dbc32c4bb08b8ce868334aa482b18b1
+        84  2026-07-31 16:42  .git\objects\77\3188b01a5590ac6c9c3669c0ff6d4a42e19f0a
+       176  2026-07-31 17:24  .git\objects\77\ca1cf5dfd316da33382bb1220269b9421a9058
+      5222  2026-07-31 16:40  .git\objects\7a\98669efea3e026854ecf646f841ca75dfc5596
+      2179  2026-08-04 14:57  .git\objects\7b\f12bb7488fb4e8c174b70396a0b1f0e9c048c7
+      2140  2026-07-31 17:36  .git\objects\7c\3783ee1ca776768ab5b2197a779ea3dc3ab2ec
+      4897  2026-07-31 16:40  .git\objects\7d\083f856de81d2f4d00f1b5f4a984b7cb89f50e
+     65670  2026-07-31 16:40  .git\objects\7d\9500ab02a5bc82f327fbaa2ebae90529cd8ebf
+      6480  2026-08-04 15:08  .git\objects\7d\de72b0118743401d4b91f4dd702eea9e5c9e9b
+      3462  2026-07-31 16:40  .git\objects\7f\15bafa45b71b00226d4b483c3a69fcf60d9925
+       187  2026-08-04 15:20  .git\objects\7f\465c1cd3e79fd76e1ddaed9933bbbe4548ed7c
+        82  2026-07-31 16:40  .git\objects\7f\e231c3c957dde4c4eb48727940803fc6478b92
+        35  2026-07-31 16:40  .git\objects\80\01d1a50b9ae858ac9bce7ade16fa74512f94fd
+      1245  2026-08-04 17:10  .git\objects\81\2ef467c6e34df15dfd029fac3b85ea79bde7ff
+      2143  2026-08-04 14:57  .git\objects\81\9a3c708ea68e611b49ccad3f019c924495d819
+       817  2026-08-04 14:57  .git\objects\82\3d1ae818bfa27c7babf2176ee53eeb2b2598e1
+      4634  2026-08-04 15:08  .git\objects\82\65b2e0c8b3418d81acb4f88475511ce3bdeac5
+      5971  2026-07-31 16:40  .git\objects\83\7448faa470279eedf0aeeb1550cb4ad307b47c
+       291  2026-08-04 15:20  .git\objects\84\59221c3d3636a9fabb4638ed4e16b075e12476
+      1976  2026-07-31 16:40  .git\objects\84\853965ad548c31599cd1aeaf6d1f5afe2451a0
+       765  2026-07-31 16:40  .git\objects\85\9c5b7e784c99ea70a615cb9801057c5e14f70f
+      6747  2026-08-04 15:08  .git\objects\85\b422cb401adda37b6a9441e71f366029da5000
+      2788  2026-07-31 16:40  .git\objects\85\ee74eeb97d73fa7a694c2c7680a4901e5ca989
+    110699  2026-07-31 16:40  .git\objects\86\6c88699b15616ea896693ccdfed8fb23b6ff84
+       505  2026-07-31 16:40  .git\objects\86\94b15fd4b80ca3a078123ede035b85e1ba970b
+       820  2026-08-04 14:57  .git\objects\86\aa1dae1263a8a350cc84c79195e90b9d3f5075
+        55  2026-07-31 16:40  .git\objects\87\71ac9d4158dd8d8cd91654422836491ca6c560
+       154  2026-07-31 16:40  .git\objects\89\09b3cba7318bf9a5897e77c75eb0021f6108af
+       192  2026-08-04 15:07  .git\objects\89\f8e4bd6a50c3b86ec849acbd3ba25c97d5a486
+    492533  2026-07-31 16:40  .git\objects\8a\7f92f607ee5905ba15ff86bdc006419b8f23a2
+      6662  2026-08-04 15:11  .git\objects\8b\630b21ad24fa4bf84c3fc3cffaba308557cc3c
+      5456  2026-07-31 16:40  .git\objects\8b\b518bbe6a25a61561f453d04c6134b67f7bb14
+    117301  2026-07-31 16:40  .git\objects\8c\9a33ae822490e46fada76c71853397e1120ca9
+       818  2026-08-04 14:57  .git\objects\8d\34f29d73de482a4b36b509d3b0130b0159bad8
+    115263  2026-07-31 16:40  .git\objects\8d\69032825578c5b5314182283fa2a135d9d3263
+      8194  2026-07-31 16:40  .git\objects\8d\d832be2a5f7d46a5792f7ce2325757e453c604
+      7447  2026-07-31 16:40  .git\objects\8e\f578e47d1f2d8cb46cec8876a16be3a51fa16f
+      8494  2026-08-04 14:58  .git\objects\90\1a9d66ccb55224a5dca59c2c1a644425d90506
+     14439  2026-08-04 14:57  .git\objects\90\c27b06223ade3e179e5226e84603d285be859b
+   2946469  2026-08-04 14:58  .git\objects\90\e7adbc159b7f454b38a06bfcbea08149ba0b8f
+      5709  2026-07-31 16:40  .git\objects\90\f15b42b61d580f2676eaabaf55ba8949e15cd2
+      7089  2026-07-31 16:40  .git\objects\91\96e171175c3d70ba00dc33e2808f08e1e9a12a
+      7789  2026-07-31 16:40  .git\objects\92\4c34279dc6d89653480e65dddd9a74d369d66e
+       820  2026-08-04 14:57  .git\objects\93\468052bd6e2673b89ca2ff65153f891c2e4312
+       257  2026-08-04 14:57  .git\objects\94\11fe7e69530e7df88419a30278dac562b97c27
+       296  2026-07-31 16:40  .git\objects\94\1bdd59819bbefa2aba8536b8a67c9ed23421c7
+       787  2026-07-31 16:40  .git\objects\94\e39dd9748625872aae27c5b1071e1a10550f5e
+      5846  2026-08-04 15:08  .git\objects\95\c59f507b94f0cc47128fefd73311e589958051
+      6755  2026-08-04 16:45  .git\objects\95\e628ef0d586a45604c82819900e077568ec938
+      6299  2026-07-31 16:40  .git\objects\95\fb28f132863d9de8b9a97b8c14be24fd82b4b0
+       107  2026-08-04 16:45  .git\objects\96\2d74a2b11b5c6e73cd004b13bf4a713deccc49
+      2655  2026-07-31 16:40  .git\objects\96\6cb3d2aa6da576cc96f6c046cd823f02668a6f
+     34433  2026-07-31 16:40  .git\objects\96\72cc8003f67a45ab01b0eb5cf7198b8b68a72c
+       169  2026-07-31 16:42  .git\objects\96\a0ceebc9748338aa252027b8ab040a8e2922b7
+      4812  2026-08-04 15:08  .git\objects\96\de099e24de6780317367c3788c1c65473ba971
+     10980  2026-07-31 16:40  .git\objects\97\2d9d12f4b6565bcf54b63bee8124bd1b8cd8d3
+      5166  2026-08-04 14:58  .git\objects\97\799adf3a990ae0017fa8a50c0d75e644e362aa
+      2396  2026-07-31 16:40  .git\objects\97\da696abb85bef984b2ba25501ed75e9c149893
+      2182  2026-08-04 14:57  .git\objects\98\8f8882578ddfb34b3083aa906231dd49de92e3
+        48  2026-07-31 16:40  .git\objects\98\faf4b693915ccd5e6a1c42ac188ffed9d14536
+    121497  2026-07-31 16:40  .git\objects\99\1b644ceeffb181fb4ebf9f51f650422b01cf56
+      1841  2026-07-31 16:40  .git\objects\99\34ac7a340a19f950fe045ead1ad2e0756f677d
+      2626  2026-07-31 16:40  .git\objects\99\e5919393ead7b5b30a8e8d2e8dd8bb10d90e9d
+      6468  2026-07-31 16:40  .git\objects\9a\88e2cc489183ff5f94fcfa884131dc504b4ec4
+      4595  2026-08-04 15:11  .git\objects\9a\d8ef8be8666adebcb62ac01b5f544e2ce66350
+      6966  2026-08-04 15:08  .git\objects\9b\62dd16603319f1740aff23f0e1a941b9b56fcd
+      2141  2026-08-04 14:57  .git\objects\9b\6328010949f2784d08e1e010305551da31477b
+     15459  2026-08-04 14:57  .git\objects\9b\bb75de9c3e945f9ca403999189db758d2a8d4b
+       185  2026-08-04 14:59  .git\objects\9c\4d99d3769c36a5627f99c0161321b4a22290d1
+      8411  2026-08-04 15:08  .git\objects\9c\a25831114e122dfc597339e2c1822f06677f44
+      6005  2026-08-04 14:58  .git\objects\9c\c788b6f110d52bf0af426655b5d7b57ae246c0
+    506484  2026-07-31 16:40  .git\objects\a0\7a9261447c6c0660fa67a54f201f426a9f7fdd
+      2200  2026-08-04 14:57  .git\objects\a1\d919718beb48aaddfe138006200305a744598d
+      2162  2026-08-04 14:57  .git\objects\a2\0db7bff02d8f12fc210b356880780480db080c
+      2142  2026-08-04 14:57  .git\objects\a2\5892ea21467bfa21d03bdd7b4f4127033b4996
+       127  2026-07-31 16:45  .git\objects\a3\f9c6d49546bf358a026ce6161b03b0a0237211
+     64425  2026-07-31 16:40  .git\objects\a4\13ddc6471735249addc954024aa63aabb1c07c
+     14637  2026-08-04 15:00  .git\objects\a4\5f5756ae8ee2ff61c366950227daaf8b97f934
+       872  2026-08-04 14:59  .git\objects\a4\e8500641e7df3131bcfae695e8fd1a0cfcdc01
+     33426  2026-07-31 16:40  .git\objects\a7\4c0a7bdf3cb11c3f3c794175aa98f4dcef82d2
+        95  2026-07-31 16:40  .git\objects\a8\9d947bb8fed574bd24b89ad15a274ef2e57857
+      6861  2026-08-04 15:08  .git\objects\a9\8a070e5936ce5e32b3ad3c4063372831f0ed67
+    113809  2026-07-31 16:40  .git\objects\aa\b12ca4f2dc59668013853f41988f1f053cecd5
+      1295  2026-08-04 15:00  .git\objects\aa\c2753b81a390d308da807441d5ae10b5a6e3cc
+       234  2026-08-04 15:11  .git\objects\aa\ffaf45c64cbc57c628b572f8367a891062a642
+      4128  2026-07-31 16:40  .git\objects\ac\258310a4ed59e66030e1b720583b3e4e41178e
+      5450  2026-07-31 16:40  .git\objects\ac\35acebcd0ccdf33ff86fbf314492b5683637b8
+      2619  2026-07-31 16:40  .git\objects\ac\39e7fc7d9dc9414281da8841aba152517096d6
+       292  2026-07-31 16:40  .git\objects\ad\66e2159e946bc6b2c07ee93b9bf87588cc9348
+    115795  2026-07-31 16:40  .git\objects\ad\f411fe1cc70d9893db69f3a353b626b8b06132
+      1538  2026-08-04 14:58  .git\objects\af\0db11b48999905fab89acb578e2f4768a40ab4
+       383  2026-07-31 16:40  .git\objects\b0\1ac82932fe09e1c58eb9cca3f3ff5c926b9a5e
+      1968  2026-07-31 16:40  .git\objects\b2\12bf595950e4ce06cd11b16260c006ffdffd7f
+     12093  2026-07-31 16:40  .git\objects\b2\6de67d88ca6d23036242487f62a74ce8f6cd01
+      6097  2026-07-31 16:40  .git\objects\b3\c967dbad367182fa1dc1871d760bcd6c1b3a1e
+     14474  2026-08-04 14:57  .git\objects\b5\37c58122d647beeb16eb6ef904356bd690f299
+       816  2026-08-04 14:57  .git\objects\b6\c1a1e273fcc6fdf1c84c626bf1d4969cb376be
+      1648  2026-07-31 16:40  .git\objects\b6\cc13b86ccdd8da61cd2d41dd00b9d7138c680d
+    104784  2026-07-31 16:40  .git\objects\b6\d8976bb6f86ee663bbd5cf2880a725aef1cb42
+      1360  2026-07-31 16:40  .git\objects\b8\337582b18953e35f246895582af34958b7fc14
+      5774  2026-08-04 17:08  .git\objects\b8\40b3bcd03f1a9133a02aa0a2aab99d2edede14
+      3907  2026-07-31 16:40  .git\objects\b8\df55e933de806dd7fe6b9b68cdfcec31bc90bc
+   3002209  2026-07-31 16:40  .git\objects\ba\51dd4da09c1a3a766bafcc7546667f8a96c6ce
+    602914  2026-07-31 16:40  .git\objects\ba\ec3691d6c2782777baf64da65bcc1c4af9bc0b
+       187  2026-08-04 17:10  .git\objects\bd\3923a5d8994ca6ffe45df8d40b6ebd25828cf4
+      1349  2026-07-31 16:40  .git\objects\c1\79af26dc13e312b1d668459f0af6dabca1ab36
+      1564  2026-07-31 16:40  .git\objects\c1\9b5c1afa13bc2cc2f4ee80e61216f6c3c5a9b8
+     14725  2026-07-31 16:40  .git\objects\c1\f71b0ad3402a6790e5e6ad638e7e85f9bb0dba
+   2169607  2026-07-31 16:40  .git\objects\c2\aeb46de43e5c6d25bfcb51e7f065ee4c56f52f
+     33032  2026-07-31 16:40  .git\objects\c2\b2863bf11e655f4e86b75f13a97397949d1026
+     33181  2026-07-31 16:40  .git\objects\c3\313469de35ad8d9f4b7f6c34759274b0fa2484
+      8349  2026-08-04 15:11  .git\objects\c3\5a96377f9e86a1359ab8bbc9df36ece2b058fc
+      3134  2026-07-31 16:40  .git\objects\c4\245ac55d1e5851cf9957c37227165eca357743
+      5684  2026-08-04 15:01  .git\objects\c6\08ba217dcfd2280c00e190af113e40bd70497b
+     65661  2026-07-31 16:40  .git\objects\c6\9c30a53d3c7b9e179b9f056ff92a18e8811ba6
+       180  2026-07-31 17:36  .git\objects\c6\e864fa9d71bb77e15f333d6589d2b1e003484c
+     12890  2026-08-04 16:45  .git\objects\c7\442520f8dde52144799d1671c44aa797ed6d91
+        54  2026-07-31 16:42  .git\objects\c7\d35225c9b619702263c93ab99682bdf3c9b6ef
+      5273  2026-08-04 14:57  .git\objects\c7\f1aa3e8b39516b144427d100ef186ab6f918fd
+      3608  2026-08-04 15:20  .git\objects\c8\ad490892ed4ce6d435c5c3856cc60f15373034
+       279  2026-08-04 17:10  .git\objects\c8\ecda723cbbb091131a69f45c97cee882c0cae5
+      1722  2026-07-31 16:40  .git\objects\ca\0f9421b3ad5ab066c722e708bd7b80b73e4125
+       114  2026-07-31 16:42  .git\objects\cb\d51ac28c1136e0df6435440a0fe57392d03d0a
+     24002  2026-07-31 16:40  .git\objects\cc\1656329e3ea0855872de96a14695039ba90380
+     72177  2026-07-31 16:40  .git\objects\cc\22587ecb90c57de1fb36a85c8cfe108fb1e902
+      2951  2026-07-31 16:40  .git\objects\cc\85eddd7ebcf7eef8136fe320c440a145819a57
+      6047  2026-08-04 14:58  .git\objects\cd\a7c0dfec2d57f980d5a97a23b015bf43003718
+       817  2026-08-04 14:57  .git\objects\cd\f2740457508ddd66be948493f8a35f8d6fdc47
+      2139  2026-08-04 14:57  .git\objects\ce\7a5abc3504e47849a20221c6a74510ef87d98d
+      2778  2026-07-31 16:40  .git\objects\ce\cb304cc18ca25209d877c369226779308d93a1
+      3217  2026-07-31 16:40  .git\objects\ce\fa34067049da01c946141bd51b0befb924d256
+       822  2026-08-04 14:57  .git\objects\cf\d73456bb67f75a349384d178fab2882d1bde4c
+      3870  2026-08-04 15:11  .git\objects\cf\ee2974387904e5aed9ae5125131fb8151dbf1e
+      4908  2026-08-04 14:57  .git\objects\d0\27b177c357728ffc25b013b130eb637f546e91
+     18028  2026-07-31 16:40  .git\objects\d0\4d7690a4d8d227ec524a67c4d60ac87f50c0b8
+      5907  2026-08-04 15:08  .git\objects\d0\ceafbfcd2bd14490977cf73d1f8901cd8ea004
+     33607  2026-07-31 16:40  .git\objects\d2\04851a166485ff3723d7ce056084286a6bea68
+      6778  2026-08-04 15:08  .git\objects\d3\679d8f0aa861a05b46ea440c2ce74a4d956974
+     42113  2026-07-31 16:40  .git\objects\d3\b6360274930071d0cbd3e4cd432f2dd66f63c8
+  10452856  2026-07-31 16:40  .git\objects\d3\dddfdf35bbf70815afd0ad96ef991f6164d3c3
+    100128  2026-07-31 16:40  .git\objects\d4\36be449c423ff3e97470198b2755cffaf5f160
+      6893  2026-07-31 16:40  .git\objects\d4\72b048f75b41d1a2727cf6c3336341ff58acad
+       263  2026-08-04 15:11  .git\objects\d4\dd39bb6a43169eb35113ae84dad162e236761a
+      9353  2026-08-04 15:11  .git\objects\d5\5ef0e7bf08076bad6ca6d4f6f84816c5b1c022
+      2096  2026-07-31 16:40  .git\objects\d5\d20e16e455bc2b45a94bed500b2f4a50ac33bb
+      5186  2026-08-04 15:11  .git\objects\d6\0ef642190ca1cf46bcf1de76783bf5811b08de
+      1657  2026-08-04 14:58  .git\objects\d6\de0cf1e8b12d72c77c4d53cf794324d8e2d9e0
+      2589  2026-07-31 16:40  .git\objects\d6\ed365b76721814ceab135489903f524a16c071
+      5913  2026-08-04 15:11  .git\objects\d7\a46d800cf627fc6bae7851895071d0c996ace1
+       816  2026-08-04 14:57  .git\objects\d7\d1ccf97b29b909f6eb568decb8bead96f38955
+      1915  2026-08-04 14:56  .git\objects\d7\f1d736090e9ed86add08b97de56a7e93615c19
+      2560  2026-07-31 16:40  .git\objects\d7\f4c7137506a339411a97e76339f5a53c95f6d2
+      3162  2026-07-31 16:40  .git\objects\d8\b340355777a87bc9811eaa2c5824d570638670
+      3123  2026-07-31 16:40  .git\objects\d9\bfbd51edb423891162e50a059b67126b07f0c3
+      4793  2026-08-04 15:11  .git\objects\db\4323ed1cf39c305acc6097052029b21aeb08c8
+      7893  2026-08-04 14:58  .git\objects\db\f62f293314b226aae5ff522657fc2f5712318e
+     24007  2026-07-31 16:40  .git\objects\dd\9ca8316ceffe29416d4a5c0dfb232a5eb65330
+     10055  2026-07-31 16:40  .git\objects\dd\dadf43b82c45da3988207818a5b50304d24997
+      5234  2026-08-04 15:11  .git\objects\e0\b4abf3f49ad9757fb225d90a18ae0e39f360d8
+      5285  2026-08-04 15:08  .git\objects\e1\0d82791c6cb69fd4c0da441c270d019fd622a7
+       203  2026-07-31 16:40  .git\objects\e1\0d9a5265150cae23cf3f80c922412c8ffd3e99
+      1297  2026-08-04 15:20  .git\objects\e3\17fe42c3b280af3d521ccf8e6371a91b4382a1
+       169  2026-07-31 16:40  .git\objects\e3\3f256ee72b4c34a09d2ffa90e8b1831391d7f8
+      2202  2026-08-04 14:57  .git\objects\e3\dda90644c6b77115056ce6f78e07b49746e376
+       586  2026-07-31 16:40  .git\objects\e4\7fb85e7b86c80451d4263dee6c5cf271ffb0d2
+     84978  2026-07-31 16:40  .git\objects\e4\9315a68a3cdd2f69f449bf0df192c339445e42
+     12681  2026-08-04 15:11  .git\objects\e4\cb61cb211590dcd0d19d3a3bb4facf2ae6b7b9
+      5858  2026-08-04 14:57  .git\objects\e5\469090c81e1b8b9b81db3f8a53738109a2f1bc
+     56307  2026-07-31 16:40  .git\objects\e5\e73b43f5a040168b2e03c16c35312775ad4e9f
+        15  2026-07-31 16:40  .git\objects\e6\9de29bb2d1d6434b8b29ae775ad8c2e48c5391
+      1887  2026-07-31 16:40  .git\objects\e7\3a63b7fd8f2d387f9783f435cd70526dd26091
+  30085107  2026-07-31 16:40  .git\objects\e7\70bc44482c6e3651f774a735e3156056a4a3ca
+      4467  2026-08-04 16:45  .git\objects\e7\9aa248f5d62d92dfe75896b99bf6ff8b72dd7b
+      2921  2026-07-31 16:40  .git\objects\e9\f82fbf8851dc6105a4ad2bc2c4571ff1a8f0b1
+      5015  2026-08-04 14:57  .git\objects\ea\de3dcfc8828f78580a8677ca30c5bc8ad38235
+      7441  2026-07-31 16:40  .git\objects\ec\845c58d7d5078bb42fe828d07fc6804630ec7c
+       592  2026-07-31 16:40  .git\objects\ed\d0f5e60da65227b3b138818ea1ee93e95768ef
+      2140  2026-08-04 14:57  .git\objects\ed\f0ce3a40d5025d205a67b9aaa5fa100c9b5e99
+      2197  2026-08-04 14:57  .git\objects\ee\c2a007d9bc7a41bfab3ddd308a2322e6fbefc0
+     89713  2026-07-31 16:40  .git\objects\ef\2ba2e7e9ad8ca40ab748c79b49c809bde85b34
+      1296  2026-08-04 15:11  .git\objects\ef\396732d4e6c07bd07b0b7caa297972684761bc
+      1718  2026-07-31 16:40  .git\objects\ef\7f493fc2c6f43263ffec02b49d61769f55eccd
+      4938  2026-07-31 16:40  .git\objects\f0\6c8b45e1f60600af53fa9e8720318637c85251
+      1379  2026-08-04 15:08  .git\objects\f1\62bb1993e62075767f8ac7554170ddba4c0448
+     33954  2026-07-31 16:40  .git\objects\f1\6ead6ecf0b517e705a4406b72671fc69d6bf76
+      5367  2026-07-31 16:40  .git\objects\f2\050190aee40e8f5d9f4dacd056a78b25ee29c4
+      4333  2026-07-31 16:40  .git\objects\f2\af2cbaee69b09752e32c960d5b24ca9fe290e2
+     13163  2026-08-04 15:11  .git\objects\f2\bc9729c5dc61cfa1eabdebc2a3a481ab9bc746
+      1295  2026-08-04 15:01  .git\objects\f3\396e4f3c0f51a618da7afbe416572eebcfb42c
+      5340  2026-07-31 16:40  .git\objects\f3\41ce4e0116527f532a3fb5224519bc1d196858
+      3923  2026-07-31 16:40  .git\objects\f4\5214176666150e94e1030f0d692444ed540ae2
+       817  2026-08-04 14:57  .git\objects\f4\7845eda4fdef4826d6622b6ebd92bfc4016f05
+       820  2026-08-04 14:57  .git\objects\f4\a33954f440f7ee5819f8244328397a64300428
+     13125  2026-08-04 15:01  .git\objects\f5\9c5ae9baebd0599d4f968363115a863cb69f14
+      4518  2026-07-31 16:40  .git\objects\f5\de1c99ee850b225a152a7911d5d25a724dcdc6
+     78782  2026-07-31 16:40  .git\objects\f6\d6d6b9ab138a31eb5eae417b28167bb66a1d3f
+     52813  2026-07-31 16:40  .git\objects\f8\29563938beb8ff13bc0dae6f934da759a5325c
+      9881  2026-07-31 16:40  .git\objects\f9\83219e3dcb3f17296c38a439f21e8de841649b
+    100082  2026-07-31 16:40  .git\objects\fa\4a59197aae6c048452bdbdb033ac47d276dd7e
+      6354  2026-08-04 14:58  .git\objects\fa\82197434471a1b59961d5be87e79c72375e318
+      5191  2026-08-04 15:11  .git\objects\fa\8798eac8a3967f72004f50ec5c0d8c67122815
+      3316  2026-07-31 16:40  .git\objects\fb\25a2870ea10171645d44607fa3dda4244582a9
+      4843  2026-07-31 16:40  .git\objects\fb\ad1a4d9d650276700b1b00b83bd52797c70aba
+      2112  2026-07-31 16:42  .git\objects\fd\2417909766dacf9910749a0a159763a83a7ecc
+      3345  2026-07-31 16:40  .git\objects\fd\76e934e876a090daa2ad9387fc60703761608f
+     67298  2026-07-31 16:40  .git\objects\fe\98177ee83084905b25d44c5e7ad4b7f62d24ee
+       511  2026-07-31 16:40  .git\objects\fe\b2e2ca742bbc695e7d728d5759d0d93f0d4931
+      5376  2026-08-04 15:11  .git\objects\fe\b666437357314699fbf1d409dce6fed83d5b43
+      2140  2026-08-04 14:57  .git\objects\ff\f50ead7f1eb9bd5f498f752c3cf3676314155e
+        41  2026-08-04 17:10  .git\refs\heads\main
+        30  2026-08-04 14:57  .git\refs\remotes\origin\HEAD
+        41  2026-08-04 17:10  .git\refs\remotes\origin\main
+       196  2026-08-04 16:45  .gitignore
+     14925  2026-07-30 10:27  2026_market_analysis_report.md
+      3794  2026-07-30 08:50  README.md
+      7732  2026-08-07 15:05  models\ai_boost_model.pkl
+      7524  2026-08-07 15:58  models\ai_boost_model_v2.pkl
+       287  2026-08-07 15:05  models\ai_features.pkl
+       537  2026-08-07 15:58  models\ai_features_v2.pkl
+       497  2026-08-07 15:58  models\ai_label_encoders_v2.pkl
+      1575  2026-08-07 15:05  models\ai_scaler.pkl
+      2151  2026-08-07 15:58  models\ai_scaler_v2.pkl
+       601  2026-08-11 15:04  reports\backtest_report.md
+      5844  2026-07-30 08:50  reports\report_2026-05-11.md
+      5917  2026-07-24 15:04  reports\report_2026-07-24.md
+      5795  2026-07-27 15:08  reports\report_2026-07-27.md
+      5665  2026-07-28 15:23  reports\report_2026-07-28.md
+      5766  2026-07-30 09:14  reports\report_2026-07-29.md
+      6047  2026-07-30 17:29  reports\report_2026-07-30.md
+      6086  2026-07-31 15:37  reports\report_2026-07-31.md
+      6085  2026-08-04 17:45  reports\report_2026-08-04.md
+      5981  2026-08-06 14:20  reports\report_2026-08-06.md
+      6184  2026-08-07 14:28  reports\report_2026-08-07.md
+      5823  2026-08-10 16:37  reports\report_2026-08-10.md
+      5936  2026-08-11 15:03  reports\report_2026-08-11.md
+      5893  2026-08-18 05:36  reports\report_2026-08-12.md
+      6195  2026-08-18 06:04  reports\report_2026-08-18.md
+      6228  2026-08-19 22:37  reports\report_2026-08-19.md
+      5846  2026-08-21 02:37  reports\report_2026-08-21.md
+      5677  2026-08-22 07:29  reports\report_2026-08-22.md
+      5587  2026-08-25 20:44  reports\report_2026-08-25.md
+      5689  2026-08-27 06:33  reports\report_2026-08-27.md
+      5942  2026-08-28 06:19  reports\report_2026-08-28.md
+      5619  2026-08-29 00:30  reports\report_2026-08-29.md
+       432  2026-07-31 17:36  requirements.txt
+       303  2026-07-30 08:50  run.sh
+    121203  2026-08-30 07:09  static\app.js
+     28249  2026-07-23 16:55  static\app.js.bak2
+     29862  2026-08-27 06:21  static\style.css
+     36082  2026-08-30 07:09  templates\index.html
+     28273  2026-08-20 00:43  templates\砸盘系数_变盘节点_龙头诞生监测_30日.html
+      6217  2026-07-30 08:50  v3_upgrade_report.md
+      6236  2026-07-30 08:50  历史数据分析报告.md
+      7360  2026-07-30 08:50  砸盘系数与连板深度分析报告.md
+
+=== 语法编译检查 (py_compile) ===
+OK   _diag.py
+OK   _syntax_check.py
+OK   app.py
+OK   backtester.py
+OK   board_calculator.py
+OK   capital_flow_analyzer.py
+OK   clear_today.py
+OK   config.py
+OK   cycle_model.py
+OK   data_fetcher.py
+OK   db.py
+OK   diagnose_db.py
+OK   dragon_detector.py
+OK   entry_certainty_analyzer.py
+OK   exit_strategy.py
+OK   feature_engineering.py
+OK   fetch_dragon_tiger.py
+OK   fetch_xgb_detailed.py
+OK   fix_shengda.py
+OK   knowledge_base.py
+OK   live_tracker.py
+OK   main.py
+OK   market_analyzer.py
+OK   notification_scheduler.py
+OK   operation_planner.py
+OK   pattern_recognizer.py
+OK   prediction_tracker.py
+OK   predictor.py
+OK   quant_strategy.py
+OK   realtime_fetcher.py
+OK   reporter.py
+FAIL requirements.py
+       File "C:\Users\15624\Desktop\软件\花花\采集\20zgqJPS-stock-platform-8.26jupan3\requirements.py", line 1
+         akshare>=1.10.0
+                      ^^
+     SyntaxError: invalid syntax
+     
+OK   self_corrector.py
+OK   self_upgrader.py
+OK   shujuku\capital_flow_analyzer.py
+OK   shujuku\config.py
+OK   shujuku\db.py
+OK   shujuku\dragon_detector.py
+OK   shujuku\feature_engineering.py
+OK   shujuku\fetch_xgb_by_date_selenium.py
+OK   shujuku\fetch_xgb_detailed.py
+OK   shujuku\main.py
+OK   shujuku\smash_coefficient.py
+OK   shujuku\test_selenium.py
+OK   shujuku\train_ai_model.py
+OK   simulator.py
+OK   smart_recommender.py
+OK   smash_coefficient.py
+OK   strategy_tracker.py
+OK   trading_executor.py
+OK   train_ai_model.py
+OK   turning_point_detector.py
+OK   upgrade_db_columns.py
+OK   volume_price_analyzer.py
+
+编译失败文件数: 1 / 54

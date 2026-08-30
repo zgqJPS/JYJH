@@ -169,6 +169,27 @@ def run_daily(db=None):
         except Exception as e:
             logger.error(f"资金流分析异常: {e}", exc_info=True)
 
+        # 7.75 市场量价环境（整体量价走势=筛选与进场首要依据，闸门状态）
+        logger.info("Step 7.75: 市场量价环境分析（量价闸门）...")
+        try:
+            from volume_price_analyzer import analyze_market_volume_price
+            vp_market = analyze_market_volume_price(target_date, DB_PATH)
+            if vp_market:
+                print("\n" + "=" * 60)
+                print("🛡️ 量价闸门 · 整体量价走势")
+                print("=" * 60)
+                print(f"  闸门状态: {vp_market.get('gate')} | "
+                      f"{vp_market.get('state_label')} | "
+                      f"量价评分: {vp_market.get('score', 0):.0f}")
+                for s in (vp_market.get('signals') or [])[:3]:
+                    print(f"  ✅ {s}")
+                for r in (vp_market.get('risks') or [])[:3]:
+                    print(f"  ⚠️ {r}")
+                logger.info(f"量价闸门: {vp_market.get('gate')}, "
+                           f"评分 {vp_market.get('score', 0):.0f}")
+        except Exception as e:
+            logger.error(f"市场量价环境分析异常: {e}", exc_info=True)
+
         # 7.8 确定性龙头识别 + 操作计划（传入资金流仓位系数）
         logger.info("Step 7.8: 确定性龙头识别与操作计划...")
         try:
